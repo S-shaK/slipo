@@ -14,16 +14,187 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: {
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+          manager_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id: string
+          manager_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          manager_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      receipts: {
+        Row: {
+          amount: number
+          category: Database["public"]["Enums"]["expense_category"]
+          created_at: string
+          currency: string
+          id: string
+          image_path: string
+          notes: string | null
+          occurred_on: string
+          trip_id: string
+          user_id: string
+          vendor: string | null
+        }
+        Insert: {
+          amount?: number
+          category?: Database["public"]["Enums"]["expense_category"]
+          created_at?: string
+          currency?: string
+          id?: string
+          image_path: string
+          notes?: string | null
+          occurred_on?: string
+          trip_id: string
+          user_id: string
+          vendor?: string | null
+        }
+        Update: {
+          amount?: number
+          category?: Database["public"]["Enums"]["expense_category"]
+          created_at?: string
+          currency?: string
+          id?: string
+          image_path?: string
+          notes?: string | null
+          occurred_on?: string
+          trip_id?: string
+          user_id?: string
+          vendor?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receipts_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trips: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          end_date: string | null
+          end_odometer: number | null
+          end_odometer_path: string | null
+          id: string
+          name: string
+          start_date: string | null
+          start_odometer: number | null
+          start_odometer_path: string | null
+          status: Database["public"]["Enums"]["trip_status"]
+          track_mileage: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          end_date?: string | null
+          end_odometer?: number | null
+          end_odometer_path?: string | null
+          id?: string
+          name: string
+          start_date?: string | null
+          start_odometer?: number | null
+          start_odometer_path?: string | null
+          status?: Database["public"]["Enums"]["trip_status"]
+          track_mileage?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          end_date?: string | null
+          end_odometer?: number | null
+          end_odometer_path?: string | null
+          id?: string
+          name?: string
+          start_date?: string | null
+          start_odometer?: number | null
+          start_odometer_path?: string | null
+          status?: Database["public"]["Enums"]["trip_status"]
+          track_mileage?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_manager_of: {
+        Args: { _employee_id: string; _manager_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "manager" | "employee" | "individual"
+      expense_category:
+        | "meals"
+        | "lodging"
+        | "transportation"
+        | "fuel"
+        | "entertainment"
+        | "office_supplies"
+        | "client_entertainment"
+        | "other"
+      trip_status: "planned" | "active" | "completed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +321,19 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["manager", "employee", "individual"],
+      expense_category: [
+        "meals",
+        "lodging",
+        "transportation",
+        "fuel",
+        "entertainment",
+        "office_supplies",
+        "client_entertainment",
+        "other",
+      ],
+      trip_status: ["planned", "active", "completed"],
+    },
   },
 } as const
