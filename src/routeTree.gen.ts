@@ -16,7 +16,7 @@ import { Route as AuthenticatedManagerRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedTripsIndexRouteImport } from './routes/_authenticated/trips.index'
 import { Route as AuthenticatedTripsNewRouteImport } from './routes/_authenticated/trips.new'
-import { Route as AuthenticatedTripsTripIdRouteImport } from './routes/_authenticated/trips.$tripId'
+import { Route as AuthenticatedTripsTripIdIndexRouteImport } from './routes/_authenticated/trips.$tripId.index'
 import { Route as AuthenticatedTripsTripIdReportRouteImport } from './routes/_authenticated/trips.$tripId.report'
 
 const AuthRoute = AuthRouteImport.update({
@@ -53,17 +53,17 @@ const AuthenticatedTripsNewRoute = AuthenticatedTripsNewRouteImport.update({
   path: '/trips/new',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedTripsTripIdRoute =
-  AuthenticatedTripsTripIdRouteImport.update({
-    id: '/trips/$tripId',
-    path: '/trips/$tripId',
+const AuthenticatedTripsTripIdIndexRoute =
+  AuthenticatedTripsTripIdIndexRouteImport.update({
+    id: '/trips/$tripId/',
+    path: '/trips/$tripId/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedTripsTripIdReportRoute =
   AuthenticatedTripsTripIdReportRouteImport.update({
-    id: '/report',
-    path: '/report',
-    getParentRoute: () => AuthenticatedTripsTripIdRoute,
+    id: '/trips/$tripId/report',
+    path: '/trips/$tripId/report',
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -71,20 +71,20 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/manager': typeof AuthenticatedManagerRoute
-  '/trips/$tripId': typeof AuthenticatedTripsTripIdRouteWithChildren
   '/trips/new': typeof AuthenticatedTripsNewRoute
   '/trips/': typeof AuthenticatedTripsIndexRoute
   '/trips/$tripId/report': typeof AuthenticatedTripsTripIdReportRoute
+  '/trips/$tripId/': typeof AuthenticatedTripsTripIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/manager': typeof AuthenticatedManagerRoute
-  '/trips/$tripId': typeof AuthenticatedTripsTripIdRouteWithChildren
   '/trips/new': typeof AuthenticatedTripsNewRoute
   '/trips': typeof AuthenticatedTripsIndexRoute
   '/trips/$tripId/report': typeof AuthenticatedTripsTripIdReportRoute
+  '/trips/$tripId': typeof AuthenticatedTripsTripIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -93,10 +93,10 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/manager': typeof AuthenticatedManagerRoute
-  '/_authenticated/trips/$tripId': typeof AuthenticatedTripsTripIdRouteWithChildren
   '/_authenticated/trips/new': typeof AuthenticatedTripsNewRoute
   '/_authenticated/trips/': typeof AuthenticatedTripsIndexRoute
   '/_authenticated/trips/$tripId/report': typeof AuthenticatedTripsTripIdReportRoute
+  '/_authenticated/trips/$tripId/': typeof AuthenticatedTripsTripIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -105,20 +105,20 @@ export interface FileRouteTypes {
     | '/auth'
     | '/dashboard'
     | '/manager'
-    | '/trips/$tripId'
     | '/trips/new'
     | '/trips/'
     | '/trips/$tripId/report'
+    | '/trips/$tripId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
     | '/dashboard'
     | '/manager'
-    | '/trips/$tripId'
     | '/trips/new'
     | '/trips'
     | '/trips/$tripId/report'
+    | '/trips/$tripId'
   id:
     | '__root__'
     | '/'
@@ -126,10 +126,10 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/dashboard'
     | '/_authenticated/manager'
-    | '/_authenticated/trips/$tripId'
     | '/_authenticated/trips/new'
     | '/_authenticated/trips/'
     | '/_authenticated/trips/$tripId/report'
+    | '/_authenticated/trips/$tripId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -189,51 +189,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTripsNewRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/trips/$tripId': {
-      id: '/_authenticated/trips/$tripId'
+    '/_authenticated/trips/$tripId/': {
+      id: '/_authenticated/trips/$tripId/'
       path: '/trips/$tripId'
-      fullPath: '/trips/$tripId'
-      preLoaderRoute: typeof AuthenticatedTripsTripIdRouteImport
+      fullPath: '/trips/$tripId/'
+      preLoaderRoute: typeof AuthenticatedTripsTripIdIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/trips/$tripId/report': {
       id: '/_authenticated/trips/$tripId/report'
-      path: '/report'
+      path: '/trips/$tripId/report'
       fullPath: '/trips/$tripId/report'
       preLoaderRoute: typeof AuthenticatedTripsTripIdReportRouteImport
-      parentRoute: typeof AuthenticatedTripsTripIdRoute
+      parentRoute: typeof AuthenticatedRouteRoute
     }
   }
 }
 
-interface AuthenticatedTripsTripIdRouteChildren {
-  AuthenticatedTripsTripIdReportRoute: typeof AuthenticatedTripsTripIdReportRoute
-}
-
-const AuthenticatedTripsTripIdRouteChildren: AuthenticatedTripsTripIdRouteChildren =
-  {
-    AuthenticatedTripsTripIdReportRoute: AuthenticatedTripsTripIdReportRoute,
-  }
-
-const AuthenticatedTripsTripIdRouteWithChildren =
-  AuthenticatedTripsTripIdRoute._addFileChildren(
-    AuthenticatedTripsTripIdRouteChildren,
-  )
-
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedManagerRoute: typeof AuthenticatedManagerRoute
-  AuthenticatedTripsTripIdRoute: typeof AuthenticatedTripsTripIdRouteWithChildren
   AuthenticatedTripsNewRoute: typeof AuthenticatedTripsNewRoute
   AuthenticatedTripsIndexRoute: typeof AuthenticatedTripsIndexRoute
+  AuthenticatedTripsTripIdReportRoute: typeof AuthenticatedTripsTripIdReportRoute
+  AuthenticatedTripsTripIdIndexRoute: typeof AuthenticatedTripsTripIdIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedManagerRoute: AuthenticatedManagerRoute,
-  AuthenticatedTripsTripIdRoute: AuthenticatedTripsTripIdRouteWithChildren,
   AuthenticatedTripsNewRoute: AuthenticatedTripsNewRoute,
   AuthenticatedTripsIndexRoute: AuthenticatedTripsIndexRoute,
+  AuthenticatedTripsTripIdReportRoute: AuthenticatedTripsTripIdReportRoute,
+  AuthenticatedTripsTripIdIndexRoute: AuthenticatedTripsTripIdIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
