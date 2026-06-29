@@ -16,7 +16,7 @@ import { Camera, Loader2, Plus, Sparkles, Trash2, FileText } from "lucide-react"
 import { toast } from "sonner";
 import { EXPENSE_CATEGORIES, formatMoney, CATEGORY_LABEL } from "@/lib/categories";
 
-export const Route = createFileRoute("/_authenticated/trips/$tripId")({
+export const Route = createFileRoute("/_authenticated/trips/$tripId/")({
   component: LiveTrip,
 });
 
