@@ -34,7 +34,7 @@ function AuthedLayout() {
   const nav = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/trips", label: "Trips", icon: MapPin },
-    ...(isManager ? [{ to: "/manager", label: "Team", icon: Users }] : []),
+    { to: "/manager", label: "Team", icon: Users },
   ];
 
   return (
