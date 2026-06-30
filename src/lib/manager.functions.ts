@@ -54,23 +54,82 @@ export const addReport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => z.object({ email: z.string().email() }).parse(i))
   .handler(async ({ data, context }) => {
-    // Look up user by email in profiles
-    const { data: target, error } = await context.supabase
-      .from("profiles").select("id, manager_id").eq("email", data.email).maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!target) throw new Error("No user found with that email. Ask them to sign up first.");
-
-    // Update their manager_id to me
-    const { error: upErr } = await context.supabase
-      .from("profiles").update({ manager_id: context.userId }).eq("id", target.id);
-    if (upErr) throw new Error(upErr.message);
-
-    // Ensure they have the 'employee' role using admin client
+    const email = data.email.trim().toLowerCase();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.from("user_roles")
-      .upsert({ user_id: target.id, role: "employee" }, { onConflict: "user_id,role" });
 
-    return { ok: true, user_id: target.id };
+    // If they already have an account, link immediately
+    const { data: target } = await context.supabase
+      .from("profiles").select("id").ilike("email", email).maybeSingle();
+
+    if (target) {
+      const { error: upErr } = await context.supabase
+        .from("profiles").update({ manager_id: context.userId }).eq("id", target.id);
+      if (upErr) throw new Error(upErr.message);
+      await supabaseAdmin.from("user_roles")
+        .upsert({ user_id: target.id, role: "employee" }, { onConflict: "user_id,role" });
+      return { status: "linked" as const, email };
+    }
+
+    // Otherwise create a pending invite (auto-links when they sign up with this email)
+    const { data: invite, error } = await context.supabase
+      .from("team_invites")
+      .upsert(
+        { manager_id: context.userId, email, status: "pending" },
+        { onConflict: "manager_id,email" },
+      )
+      .select("token")
+      .single();
+    if (error) throw new Error(error.message);
+    return { status: "invited" as const, email, token: invite.token };
+  });
+
+export const listPendingInvites = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("team_invites")
+      .select("id, email, token, created_at, status")
+      .eq("manager_id", context.userId)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const revokeInvite = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ id: z.string().uuid() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase
+      .from("team_invites")
+      .update({ status: "revoked" })
+      .eq("id", data.id)
+      .eq("manager_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const lookupInvite = createServerFn({ method: "GET" })
+  .inputValidator((i: unknown) => z.object({ token: z.string().min(1) }).parse(i))
+  .handler(async ({ data }) => {
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_PUBLISHABLE_KEY!,
+      { auth: { persistSession: false, autoRefreshToken: false } },
+    );
+    const { data: invite } = await sb
+      .from("team_invites")
+      .select("email, manager_id, status")
+      .eq("token", data.token)
+      .maybeSingle();
+    if (!invite || invite.status !== "pending") return null;
+    const { data: mgr } = await sb
+      .from("profiles").select("full_name, email").eq("id", invite.manager_id).maybeSingle();
+    return {
+      email: invite.email,
+      manager_name: mgr?.full_name ?? mgr?.email ?? "your manager",
+    };
   });
 
 export const becomeManager = createServerFn({ method: "POST" })
