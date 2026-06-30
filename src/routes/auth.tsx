@@ -1,14 +1,20 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { z } from "zod";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
+import { lookupInvite } from "@/lib/manager.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
-const search = z.object({ mode: z.enum(["signin", "signup"]).optional() });
+const search = z.object({
+  mode: z.enum(["signin", "signup"]).optional(),
+  invite: z.string().optional(),
+});
 
 export const Route = createFileRoute("/auth")({
   validateSearch: search,
@@ -18,12 +24,23 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
-  const { mode } = Route.useSearch();
-  const [tab, setTab] = useState<"signin" | "signup">(mode ?? "signin");
+  const { mode, invite } = Route.useSearch();
+  const [tab, setTab] = useState<"signin" | "signup">(mode ?? (invite ? "signup" : "signin"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const lookup = useServerFn(lookupInvite);
+  const inviteQ = useQuery({
+    queryKey: ["invite", invite],
+    queryFn: () => lookup({ data: { token: invite! } }),
+    enabled: !!invite,
+  });
+
+  useEffect(() => {
+    if (inviteQ.data?.email && !email) setEmail(inviteQ.data.email);
+  }, [inviteQ.data, email]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
