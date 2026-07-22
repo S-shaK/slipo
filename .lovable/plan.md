@@ -1,34 +1,47 @@
-## Goal
-Let managers add a teammate by email even when that person hasn't signed up yet. The teammate gets an email invite; when they sign up with that email, they're automatically linked to the inviting manager and appear on the dashboard.
+## What Meta is asking for
 
-## Changes
+The "Set endpoint URI" step wants a public **HTTPS URL** that Meta will POST to whenever your Flow needs data (screen loads, form submits, health checks). Meta encrypts every request with a public key you upload ("Sign public key"), and your endpoint must decrypt it, respond, and re-encrypt the reply. So we need to:
 
-### 1. Database
-- New table `team_invites`: `manager_id`, `email` (lowercased, unique per manager), `status` (`pending`, `accepted`, `revoked`), `token` (random, used in email link), `accepted_at`.
-- GRANTs + RLS: manager can view/insert/revoke their own invites; service role full access.
-- Update `handle_new_user` trigger: after creating the profile, look for a `pending` invite matching the new user's email. If found, set `profiles.manager_id` to the invite's manager, upsert `user_roles` (`employee`), and mark the invite `accepted`.
+1. Build the endpoint in this app.
+2. Generate an RSA keypair — upload the public key to Meta, store the private key as a secret here.
+3. Paste the endpoint URL into that "https://example.com" field and Submit.
 
-### 2. Email
-- Set up Lovable Emails infrastructure (requires email domain — user will be prompted via the setup dialog if none exists).
-- Scaffold the transactional email system.
-- Add a branded "You've been invited to join {manager name}'s team" template with a CTA button linking to `/auth?invite={token}`.
+## Plan
 
-### 3. Server functions (`src/lib/manager.functions.ts`)
-- Rewrite `addReport`:
-  1. Normalize email.
-  2. If a profile with that email exists → link immediately as today.
-  3. Otherwise create a `team_invites` row and send the invite email. Return `{ status: "invited" | "linked" }`.
-- New `listPendingInvites` for the manager UI.
-- New `revokeInvite`.
+### 1. Public endpoint route
+Create `src/routes/api/public/whatsapp-flow.ts` (the `/api/public/*` prefix bypasses auth so Meta can reach it). It will:
+- Accept `POST` with `{ encrypted_flow_data, encrypted_aes_key, initial_vector }`.
+- Decrypt the AES key with our RSA private key (OAEP/SHA-256), then AES-GCM-decrypt the payload.
+- Handle the three Meta actions: `ping` (health check → `{ data: { status: "active" } }`), `INIT` / `data_exchange` / `BACK` (return the next screen's data), and `error_notification` (log and ack).
+- Re-encrypt the response with the same AES key + flipped IV, return as base64 text with `Content-Type: text/plain`.
+- Also handle `GET` returning 200 so Meta's reachability check passes.
 
-### 4. Manager UI (`src/routes/_authenticated/manager.tsx`)
-- After adding: toast says "Invite sent" or "Added to team" based on result.
-- New "Pending invites" section listing email, sent date, and a Revoke button.
+### 2. Keys & secrets
+- Generate a 2048-bit RSA keypair locally (one-time script, printed to console).
+- Store `WHATSAPP_FLOW_PRIVATE_KEY` (PEM) and optional `WHATSAPP_FLOW_PASSPHRASE` via the secrets tool.
+- You paste the **public key** into Meta's "Sign public key" step.
 
-### 5. Auth flow
-- `/auth` page reads `?invite=<token>` and shows "You're joining {manager name}'s team — sign up to accept." The token itself isn't needed to link (the trigger matches by email), but it's used to surface the context and prefill nothing sensitive.
+### 3. Business logic hooks
+For the sign-in flow specifically, the endpoint's `data_exchange` handler will:
+- Receive the email/password (or OTP) the user submitted in the Flow.
+- Call Supabase auth server-side to verify.
+- Return either the next screen payload or an error message to display in WhatsApp.
+
+Scope for this pass = wire up the endpoint + crypto + a stub sign-in handler that returns success/failure. Real session bridging into the web app (deep link, magic token) is a follow-up once Meta's side is green.
+
+### 4. What you do in the Meta UI after this ships
+1. Copy the published URL: `https://project--7df2497f-b533-4c73-9625-6a8b8820f55c.lovable.app/api/public/whatsapp-flow` — paste into the endpoint field, Submit.
+2. Go to "Sign public key", paste the public key I'll print.
+3. "Add phone number" / "Connect Meta app" — pick your WABA phone + app.
+4. Click "Health check" — should turn green.
+
+## Technical details
+- Uses Node `crypto` (available in the Worker runtime with nodejs_compat).
+- Response IV = bitwise NOT of request IV (Meta's spec).
+- Version negotiation: return `{ version: "3.0" }` inside encrypted payload.
+- No DB migration required for the endpoint itself; sign-in handler reuses existing `profiles` / auth.
 
 ## Out of scope
-- Reminder emails / invite expiry (can add later).
-- Bulk CSV invite.
-- Editing pending invite email (revoke + resend instead).
+- Building the actual Flow JSON screens (you're doing that in Meta's Flow Builder).
+- Deep-linking a WhatsApp-authenticated user into a web session (needs a separate signed-token exchange — plan separately).
+- Sending the Flow message from your backend to a user's WhatsApp (needs WABA Cloud API credentials).
