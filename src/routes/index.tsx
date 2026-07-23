@@ -4,10 +4,10 @@ import { Camera, Receipt, BarChart3, Users, FileDown, ShieldCheck } from "lucide
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Ledger — Travel expense reports without the spreadsheet" },
+      { title: "Slipo — Travel expense reports without the spreadsheet" },
       { name: "description", content: "Snap receipts on the road. Auto-categorize with AI. Generate manager-ready reports and 5-year-compliant CSV exports." },
-      { property: "og:title", content: "Ledger — Travel expense tracker" },
-      { property: "og:description", content: "Snap, total, and report business travel expenses in seconds." },
+      { property: "og:title", content: "Slipo — Travel expense reports without the spreadsheet" },
+      { property: "og:description", content: "Snap receipts on the road. Auto-categorize with AI. Generate manager-ready reports and 5-year-compliant CSV exports." },
     ],
   }),
   component: Landing,
