@@ -112,25 +112,21 @@ export const revokeInvite = createServerFn({ method: "POST" })
 export const lookupInvite = createServerFn({ method: "GET" })
   .inputValidator((i: unknown) => z.object({ token: z.string().min(1) }).parse(i))
   .handler(async ({ data }) => {
-    const { createClient } = await import("@supabase/supabase-js");
-    const sb = createClient(
-      process.env.SUPABASE_URL!,
-      process.env.SUPABASE_PUBLISHABLE_KEY!,
-      { auth: { persistSession: false, autoRefreshToken: false } },
-    );
-    const { data: invite } = await sb
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: invite } = await supabaseAdmin
       .from("team_invites")
       .select("email, manager_id, status")
       .eq("token", data.token)
       .maybeSingle();
     if (!invite || invite.status !== "pending") return null;
-    const { data: mgr } = await sb
+    const { data: mgr } = await supabaseAdmin
       .from("profiles").select("full_name, email").eq("id", invite.manager_id).maybeSingle();
     return {
       email: invite.email,
       manager_name: mgr?.full_name ?? mgr?.email ?? "your manager",
     };
   });
+
 
 export const becomeManager = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
