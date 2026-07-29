@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   createDecipheriv,
   createCipheriv,
+  createHmac,
+  timingSafeEqual,
   privateDecrypt,
   constants,
   createPrivateKey,
@@ -230,13 +232,43 @@ async function magicLink(email: string): Promise<string | null> {
 }
 
 
+function verifySignature(rawBody: string, header: string | null) {
+  const appSecret = process.env.WHATSAPP_APP_SECRET;
+  // If no app secret is configured, skip verification (dev / mock flows).
+  if (!appSecret) return true;
+  if (!header?.startsWith("sha256=")) return false;
+  const expected = createHmac("sha256", appSecret).update(rawBody, "utf8").digest("hex");
+  const received = header.slice("sha256=".length);
+  const a = Buffer.from(expected, "hex");
+  const b = Buffer.from(received, "hex");
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export const Route = createFileRoute("/api/public/whatsapp-flow")({
   server: {
     handlers: {
-      GET: async () => new Response("ok", { status: 200 }),
+      // Meta webhook verification handshake (hub.challenge / verify token)
+      GET: async ({ request }) => {
+        const url = new URL(request.url);
+        const mode = url.searchParams.get("hub.mode");
+        const token = url.searchParams.get("hub.verify_token");
+        const challenge = url.searchParams.get("hub.challenge");
+        const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
+        if (mode === "subscribe" && verifyToken && token === verifyToken) {
+          return new Response(challenge ?? "", { status: 200 });
+        }
+        if (mode) return new Response("Forbidden", { status: 403 });
+        return new Response("ok", { status: 200 });
+      },
       POST: async ({ request }) => {
         try {
-          const body = (await request.json()) as {
+          const rawBody = await request.text();
+
+          if (!verifySignature(rawBody, request.headers.get("x-hub-signature-256"))) {
+            return new Response("Invalid signature", { status: 401 });
+          }
+
+          const body = JSON.parse(rawBody) as {
             encrypted_flow_data: string;
             encrypted_aes_key: string;
             initial_vector: string;
@@ -267,3 +299,4 @@ export const Route = createFileRoute("/api/public/whatsapp-flow")({
     },
   },
 });
+
