@@ -68,6 +68,28 @@ function encryptResponse(payload: unknown, aesKey: Buffer, iv: Buffer) {
   return Buffer.concat([encrypted, tag]).toString("base64");
 }
 
+const APP_URL =
+  process.env.APP_PUBLIC_URL || "https://slipo.lovable.app";
+
+function publicClient() {
+  return import("@supabase/supabase-js").then(({ createClient }) =>
+    createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_PUBLISHABLE_KEY!, {
+      auth: { persistSession: false },
+    }),
+  );
+}
+
+function terminal(params: Record<string, unknown>, flowToken?: string) {
+  return {
+    screen: "SUCCESS",
+    data: {
+      extension_message_response: {
+        params: { flow_token: flowToken, ...params },
+      },
+    },
+  };
+}
+
 async function handleAction(req: FlowRequest): Promise<unknown> {
   // Health check
   if (req.action === "ping") {
@@ -80,68 +102,133 @@ async function handleAction(req: FlowRequest): Promise<unknown> {
     return { data: { acknowledged: true } };
   }
 
-  // Sign-in flow stub. Replace screen names + payloads with what your Flow JSON expects.
   if (req.action === "INIT") {
-    return {
-      screen: "SIGN_IN",
-      data: {},
-    };
-  }
-
-  if (req.action === "data_exchange") {
-    const screen = req.screen ?? "";
-    const data = req.data ?? {};
-
-    if (screen === "SIGN_IN") {
-      const email = String(data.email ?? "").trim().toLowerCase();
-      const password = String(data.password ?? "");
-
-      if (!email || !password) {
-        return {
-          screen: "SIGN_IN",
-          data: { error_message: "Email and password are required." },
-        };
-      }
-
-      // Verify credentials against Supabase (server-side).
-      const { createClient } = await import("@supabase/supabase-js");
-      const supabase = createClient(
-        process.env.SUPABASE_URL!,
-        process.env.SUPABASE_PUBLISHABLE_KEY!,
-        { auth: { persistSession: false } },
-      );
-      const { data: auth, error } = await supabase.auth.signInWithPassword({ email, password });
-
-      if (error || !auth.session) {
-        return {
-          screen: "SIGN_IN",
-          data: { error_message: "Invalid email or password." },
-        };
-      }
-
-      // Terminal success — closes the Flow and returns this payload to your webhook.
-      return {
-        screen: "SUCCESS",
-        data: {
-          extension_message_response: {
-            params: {
-              flow_token: req.flow_token,
-              user_id: auth.user?.id,
-            },
-          },
-        },
-      };
-    }
-
-    return { screen, data: {} };
+    return { screen: "SIGN_IN", data: {} };
   }
 
   if (req.action === "BACK") {
     return { screen: req.screen ?? "SIGN_IN", data: {} };
   }
 
-  return { data: {} };
+  if (req.action !== "data_exchange") return { data: {} };
+
+  const screen = req.screen ?? "";
+  const data = req.data ?? {};
+  const email = String(data.email ?? "").trim().toLowerCase();
+
+  // ---- SIGN IN -----------------------------------------------------------
+  if (screen === "SIGN_IN") {
+    const password = String(data.password ?? "");
+    if (!email || !password) {
+      return terminal({ status: "error", message: "Email and password are required." }, req.flow_token);
+    }
+
+    const supabase = await publicClient();
+    const { data: auth, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !auth.session) {
+      return terminal({ status: "error", message: "Invalid email or password." }, req.flow_token);
+    }
+
+    const link = await magicLink(email);
+    return terminal(
+      {
+        status: "signed_in",
+        user_id: auth.user?.id,
+        message: "Signed in. Tap the link to open your dashboard.",
+        login_url: link ?? `${APP_URL}/auth`,
+      },
+      req.flow_token,
+    );
+  }
+
+  // ---- SIGN UP -----------------------------------------------------------
+  if (screen === "SIGN_UP") {
+    const password = String(data.password ?? "");
+    const confirm = String(data.confirm_password ?? "");
+    const fullName = [data.first_name, data.last_name]
+      .map((v) => String(v ?? "").trim())
+      .filter(Boolean)
+      .join(" ");
+
+    if (!email || !password) {
+      return terminal({ status: "error", message: "Email and password are required." }, req.flow_token);
+    }
+    if (password !== confirm) {
+      return terminal({ status: "error", message: "Passwords do not match." }, req.flow_token);
+    }
+    if (password.length < 6) {
+      return terminal({ status: "error", message: "Password must be at least 6 characters." }, req.flow_token);
+    }
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName || null, source: "whatsapp_flow" },
+    });
+
+    if (error) {
+      const msg = /already/i.test(error.message)
+        ? "An account with that email already exists. Try signing in."
+        : "Could not create your account. Please try again.";
+      return terminal({ status: "error", message: msg }, req.flow_token);
+    }
+
+    const link = await magicLink(email);
+    return terminal(
+      {
+        status: "signed_up",
+        user_id: created.user?.id,
+        message: "Account created. Tap the link to open your dashboard.",
+        login_url: link ?? `${APP_URL}/auth`,
+      },
+      req.flow_token,
+    );
+  }
+
+  // ---- FORGOT PASSWORD ---------------------------------------------------
+  if (screen === "FORGOT_PASSWORD") {
+    if (!email) {
+      return terminal({ status: "error", message: "Email is required." }, req.flow_token);
+    }
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin.auth.admin.generateLink({
+        type: "recovery",
+        email,
+        options: { redirectTo: `${APP_URL}/auth` },
+      });
+    } catch (err) {
+      console.error("recovery link error", err);
+    }
+    // Always the same answer — never reveal whether the account exists.
+    return terminal(
+      { status: "reset_sent", message: "If that email has an account, a reset link is on its way." },
+      req.flow_token,
+    );
+  }
+
+  return { screen, data: {} };
 }
+
+// One-time login link so the WhatsApp user lands in the web app already signed in.
+async function magicLink(email: string): Promise<string | null> {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+      type: "magiclink",
+      email,
+      options: { redirectTo: `${APP_URL}/dashboard` },
+    });
+    if (error) throw error;
+    return data.properties?.action_link ?? null;
+  } catch (err) {
+    console.error("magic link error", err);
+    return null;
+  }
+}
+
 
 export const Route = createFileRoute("/api/public/whatsapp-flow")({
   server: {
