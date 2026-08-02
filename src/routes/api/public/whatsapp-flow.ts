@@ -20,10 +20,9 @@ type FlowRequest = {
   flow_token?: string;
 };
 try {
-  const { pem, passphrase } = loadPrivateKey();
+  const { pem } = loadPrivateKey();
   const pub = createPublicKey({
     key: pem,
-    passphrase,
   }).export({
     type: "spki",
     format: "pem",
@@ -64,7 +63,7 @@ function decryptRequest(body: {
   encrypted_aes_key: string;
   initial_vector: string;
 }) {
-  const { pem, passphrase } = loadPrivateKey();
+  const { pem } = loadPrivateKey();
 
   let aesKey: Buffer;
 
@@ -72,7 +71,6 @@ function decryptRequest(body: {
     aesKey = privateDecrypt(
       {
         key: pem,
-        passphrase,
         padding: constants.RSA_PKCS1_OAEP_PADDING,
         oaepHash: "sha256",
       },
@@ -144,13 +142,6 @@ function encryptResponse(payload: unknown, aesKey: Buffer, iv: Buffer) {
 const APP_URL =
   process.env.APP_PUBLIC_URL || "https://slipo.lovable.app";
 
-function publicClient() {
-  return import("@supabase/supabase-js").then(({ createClient }) =>
-    createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_PUBLISHABLE_KEY!, {
-      auth: { persistSession: false },
-    }),
-  );
-}
 
 function terminal(params: Record<string, unknown>, flowToken?: string) {
   return {
@@ -162,7 +153,27 @@ function terminal(params: Record<string, unknown>, flowToken?: string) {
     },
   };
 }
+async function publicClient() {
+  const { createClient } = await import("@supabase/supabase-js");
 
+  if (!process.env.SUPABASE_URL) {
+    throw new Error("Missing SUPABASE_URL");
+  }
+
+  if (!process.env.SUPABASE_PUBLISHABLE_KEY) {
+    throw new Error("Missing SUPABASE_PUBLISHABLE_KEY");
+  }
+
+  return createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_PUBLISHABLE_KEY,
+    {
+      auth: {
+        persistSession: false,
+      },
+    },
+  );
+}
 async function handleAction(req: FlowRequest): Promise<unknown> {
   // Health check
   if (req.action === "ping") {
@@ -179,9 +190,12 @@ async function handleAction(req: FlowRequest): Promise<unknown> {
     return { screen: "SIGN_IN", data: {} };
   }
 
-  if (req.action === "BACK") {
-    return { screen: req.screen ?? "SIGN_IN", data: {} };
-  }
+ if (req.action === "BACK") {
+  return {
+    screen: "SIGN_IN",
+    data: {},
+  };
+}
 
   if (req.action !== "data_exchange") return { data: {} };
 
@@ -196,8 +210,15 @@ async function handleAction(req: FlowRequest): Promise<unknown> {
       return terminal({ status: "error", message: "Email and password are required." }, req.flow_token);
     }
 
-    const supabase = await publicClient();
-    const { data: auth, error } = await supabase.auth.signInWithPassword({ email, password });
+
+
+const supabase = await publicClient();
+
+const { data: auth, error } =
+  await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
     if (error || !auth.session) {
       return terminal({ status: "error", message: "Invalid email or password." }, req.flow_token);
     }
