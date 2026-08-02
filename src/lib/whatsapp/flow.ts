@@ -1,139 +1,110 @@
 /**
- * WhatsApp Flows Encryption Helpers
- * TypeScript version
+ * WhatsApp Flows - Flow Logic
  */
 
-import crypto from "crypto";
+export const getNextScreen = async (decryptedBody: any) => {
+  const { screen, data, action, flow_token } = decryptedBody;
 
-export interface DecryptedRequest {
-  decryptedBody: any;
-  aesKeyBuffer: Buffer;
-  initialVectorBuffer: Buffer;
-}
-
-export class FlowEndpointException extends Error {
-  statusCode: number;
-
-  constructor(statusCode: number, message: string) {
-    super(message);
-
-    this.name = "FlowEndpointException";
-    this.statusCode = statusCode;
-  }
-}
-
-export function decryptRequest(
-  body: any,
-  privatePem: string,
-  passphrase: string = ""
-): DecryptedRequest {
-  const {
-    encrypted_aes_key,
-    encrypted_flow_data,
-    initial_vector,
-  } = body;
-
-  let privateKey;
-
-  try {
-    privateKey = crypto.createPrivateKey({
-      key: privatePem,
-      passphrase,
-    });
-  } catch (err) {
-    console.error("Unable to load private key", err);
-
-    throw new FlowEndpointException(
-      500,
-      "Unable to load private key."
-    );
-  }
-
-  let decryptedAesKey: Buffer;
-
-  try {
-    decryptedAesKey = crypto.privateDecrypt(
-      {
-        key: privateKey,
-        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-        oaepHash: "sha256",
+  // Health check
+  if (action === "ping") {
+    return {
+      data: {
+        status: "active",
       },
-      Buffer.from(encrypted_aes_key, "base64")
-    );
-  } catch (err) {
-    console.error("RSA decrypt failed", err);
-
-    throw new FlowEndpointException(
-      421,
-      "Failed to decrypt the request. Please verify your private key."
-    );
+    };
   }
 
-  const flowDataBuffer = Buffer.from(
-    encrypted_flow_data,
-    "base64"
-  );
+  // Client-side validation errors
+  if (data?.error) {
+    console.warn("Received client error:", data);
 
-  const initialVectorBuffer = Buffer.from(
-    initial_vector,
-    "base64"
-  );
+    return {
+      data: {
+        acknowledged: true,
+      },
+    };
+  }
 
-  const TAG_LENGTH = 16;
+  // Initial request when the Flow opens
+  if (action === "INIT") {
+    return {
+      screen: "HOME",
+      data: {},
+    };
+  }
 
-  const encryptedBody = flowDataBuffer.subarray(
-    0,
-    -TAG_LENGTH
-  );
+  // Requests from the Flow
+  if (action === "data_exchange") {
+    switch (screen) {
+      case "HOME":
+        switch (data?.action) {
+          case "trip":
+            return {
+              screen: "TRIP_MENU",
+              data: {},
+            };
 
-  const authTag = flowDataBuffer.subarray(
-    -TAG_LENGTH
-  );
+          case "receipt":
+            return {
+              screen: "UPLOAD_RECEIPT",
+              data: {},
+            };
 
-  const decipher = crypto.createDecipheriv(
-    "aes-128-gcm",
-    decryptedAesKey,
-    initialVectorBuffer
-  );
+          case "report":
+            return {
+              screen: "GENERATE_REPORT",
+              data: {},
+            };
 
-  decipher.setAuthTag(authTag);
+          default:
+            break;
+        }
+        break;
 
-  const decryptedJSONString = Buffer.concat([
-    decipher.update(encryptedBody),
-    decipher.final(),
-  ]).toString("utf8");
+      case "TRIP_MENU":
+        switch (data?.trip_action) {
+          case "start":
+            return {
+              screen: "START_TRIP",
+              data: {},
+            };
 
-  return {
-    decryptedBody: JSON.parse(decryptedJSONString),
-    aesKeyBuffer: decryptedAesKey,
-    initialVectorBuffer,
-  };
-}
+          case "edit":
+            return {
+              screen: "EDIT_TRIP",
+              data: {},
+            };
 
-export function encryptResponse(
-  response: unknown,
-  aesKeyBuffer: Buffer,
-  initialVectorBuffer: Buffer
-): string {
-  const flippedIV = Buffer.from(
-    initialVectorBuffer.map((b) => ~b)
-  );
+          case "end":
+            return {
+              screen: "END_TRIP",
+              data: {},
+            };
 
-  const cipher = crypto.createCipheriv(
-    "aes-128-gcm",
-    aesKeyBuffer,
-    flippedIV
-  );
+          default:
+            break;
+        }
+        break;
 
-  const encrypted = Buffer.concat([
-    cipher.update(JSON.stringify(response), "utf8"),
-    cipher.final(),
-  ]);
+      case "START_TRIP":
+      case "EDIT_TRIP":
+      case "END_TRIP":
+      case "UPLOAD_RECEIPT":
+      case "GENERATE_REPORT":
+        return {
+          screen: "SUCCESS",
+          data: {
+            extension_message_response: {
+              params: {
+                flow_token,
+              },
+            },
+          },
+        };
+    }
+  }
 
-  const tag = cipher.getAuthTag();
+  console.error("Unhandled request:", decryptedBody);
 
-  return Buffer.concat([
-    encrypted,
-    tag,
-  ]).toString("base64");
-}
+  throw new Error("Unhandled Flow request.");
+};
