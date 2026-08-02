@@ -2,7 +2,36 @@
  * WhatsApp Flows - Flow Logic
  */
 
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { createClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
+
+const APP_URL = process.env.APP_PUBLIC_URL || "https://slipo.lovable.app";
+
+// The generated `@/integrations/supabase/client` export is a browser-oriented
+// singleton (persistSession + localStorage). Reusing that same instance here
+// would mean every request on this server shares one auth/session state,
+// which is unsafe with concurrent users. Instead we create a fresh,
+// session-less client per invocation, scoped to this request only.
+function getSupabaseClient() {
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const SUPABASE_PUBLISHABLE_KEY =
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+    throw new Error(
+      "Missing SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY environment variable(s).",
+    );
+  }
+
+  return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
 
 export const getNextScreen = async (decryptedBody: any) => {
   const { screen, data, action, flow_token } = decryptedBody;
@@ -84,7 +113,7 @@ export const getNextScreen = async (decryptedBody: any) => {
 
 
     const { data: auth, error } =
-      await supabaseAdmin.auth.signInWithPassword({
+      await getSupabaseClient().auth.signInWithPassword({
         email,
         password,
       });
@@ -182,15 +211,20 @@ export const getNextScreen = async (decryptedBody: any) => {
     }
 
 
-
+    // No admin client available here, so we use the public sign-up flow.
+    // Supabase will send its own confirmation email (if email confirmations
+    // are enabled on the project) rather than us marking the user
+    // pre-confirmed the way admin.createUser({ email_confirm: true }) did.
     const { data: created, error } =
-      await supabaseAdmin.auth.admin.createUser({
+      await getSupabaseClient().auth.signUp({
         email,
         password,
-        email_confirm:true,
-        user_metadata:{
-          full_name:fullName,
-          source:"whatsapp_flow"
+        options: {
+          data: {
+            full_name: fullName,
+            source: "whatsapp_flow"
+          },
+          emailRedirectTo: `${APP_URL}/auth`
         }
       });
 
@@ -222,7 +256,7 @@ export const getNextScreen = async (decryptedBody: any) => {
           params:{
             flow_token,
             status:"signed_up",
-            user_id:created.user.id
+            user_id:created.user?.id
           }
         }
       }
@@ -257,11 +291,16 @@ export const getNextScreen = async (decryptedBody: any) => {
     }
 
 
-
-    await supabaseAdmin.auth.admin.generateLink({
-      type:"recovery",
-      email,
+    // Public reset-password call replaces admin.generateLink({ type: "recovery" }).
+    // Errors are intentionally swallowed below so we never reveal whether an
+    // account exists for a given email.
+    const { error } = await getSupabaseClient().auth.resetPasswordForEmail(email, {
+      redirectTo: `${APP_URL}/auth`,
     });
+
+    if (error) {
+      console.error("resetPasswordForEmail error:", error);
+    }
 
 
 
