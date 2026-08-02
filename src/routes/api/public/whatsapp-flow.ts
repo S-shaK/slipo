@@ -8,17 +8,11 @@ import {
   constants,
 } from "node:crypto";
 import { createPublicKey } from "node:crypto";
+import { getNextScreen } from "@/lib/whatsapp/flow";
 
 // WhatsApp Flow Data Endpoint
 // Meta docs: https://developers.facebook.com/docs/whatsapp/flows/reference/implementingyourflowendpoint
 
-type FlowRequest = {
-  version: string;
-  action: "ping" | "INIT" | "data_exchange" | "BACK";
-  screen?: string;
-  data?: Record<string, unknown>;
-  flow_token?: string;
-};
 try {
   const { pem } = loadPrivateKey();
   const pub = createPublicKey({
@@ -118,7 +112,7 @@ function decryptRequest(body: {
   
 
     return {
-      decrypted: JSON.parse(decrypted.toString("utf8")) as FlowRequest,
+      decrypted,
       aesKey,
       iv,
     };
@@ -138,191 +132,6 @@ function encryptResponse(payload: unknown, aesKey: Buffer, iv: Buffer) {
   const tag = cipher.getAuthTag();
   return Buffer.concat([encrypted, tag]).toString("base64");
 }
-
-const APP_URL =
-  process.env.APP_PUBLIC_URL || "https://slipo.lovable.app";
-
-
-function terminal(params: Record<string, unknown>, flowToken?: string) {
-  return {
-    screen: "SUCCESS",
-    data: {
-      extension_message_response: {
-        params: { flow_token: flowToken, ...params },
-      },
-    },
-  };
-}
-async function publicClient() {
-  const { createClient } = await import("@supabase/supabase-js");
-
-  if (!process.env.SUPABASE_URL) {
-    throw new Error("Missing SUPABASE_URL");
-  }
-
-  if (!process.env.SUPABASE_PUBLISHABLE_KEY) {
-    throw new Error("Missing SUPABASE_PUBLISHABLE_KEY");
-  }
-
-  return createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_PUBLISHABLE_KEY,
-    {
-      auth: {
-        persistSession: false,
-      },
-    },
-  );
-}
-async function handleAction(req: FlowRequest): Promise<unknown> {
-  // Health check
-  if (req.action === "ping") {
-    return { data: { status: "active" } };
-  }
-
-  // Error notifications from the client — just acknowledge
-  if (req.data && "error" in req.data) {
-    console.error("WhatsApp Flow client error:", req.data);
-    return { data: { acknowledged: true } };
-  }
-
-  if (req.action === "INIT") {
-    return { screen: "SIGN_IN", data: {} };
-  }
-
- if (req.action === "BACK") {
-  return {
-    screen: "SIGN_IN",
-    data: {},
-  };
-}
-
-  if (req.action !== "data_exchange") return { data: {} };
-
-  const screen = req.screen ?? "";
-  const data = req.data ?? {};
-  const email = String(data.email ?? "").trim().toLowerCase();
-
-  // ---- SIGN IN -----------------------------------------------------------
-  if (screen === "SIGN_IN") {
-    const password = String(data.password ?? "");
-    if (!email || !password) {
-      return terminal({ status: "error", message: "Email and password are required." }, req.flow_token);
-    }
-
-
-
-const supabase = await publicClient();
-
-const { data: auth, error } =
-  await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-    if (error || !auth.session) {
-      return terminal({ status: "error", message: "Invalid email or password." }, req.flow_token);
-    }
-
-    const link = await magicLink(email);
-    return terminal(
-      {
-        status: "signed_in",
-        user_id: auth.user?.id,
-        message: "Signed in. Tap the link to open your dashboard.",
-        login_url: link ?? `${APP_URL}/auth`,
-      },
-      req.flow_token,
-    );
-  }
-
-  // ---- SIGN UP -----------------------------------------------------------
-  if (screen === "SIGN_UP") {
-    const password = String(data.password ?? "");
-    const confirm = String(data.confirm_password ?? "");
-    const fullName = [data.first_name, data.last_name]
-      .map((v) => String(v ?? "").trim())
-      .filter(Boolean)
-      .join(" ");
-
-    if (!email || !password) {
-      return terminal({ status: "error", message: "Email and password are required." }, req.flow_token);
-    }
-    if (password !== confirm) {
-      return terminal({ status: "error", message: "Passwords do not match." }, req.flow_token);
-    }
-    if (password.length < 6) {
-      return terminal({ status: "error", message: "Password must be at least 6 characters." }, req.flow_token);
-    }
-
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { full_name: fullName || null, source: "whatsapp_flow" },
-    });
-
-    if (error) {
-      const msg = /already/i.test(error.message)
-        ? "An account with that email already exists. Try signing in."
-        : "Could not create your account. Please try again.";
-      return terminal({ status: "error", message: msg }, req.flow_token);
-    }
-
-    const link = await magicLink(email);
-    return terminal(
-      {
-        status: "signed_up",
-        user_id: created.user?.id,
-        message: "Account created. Tap the link to open your dashboard.",
-        login_url: link ?? `${APP_URL}/auth`,
-      },
-      req.flow_token,
-    );
-  }
-
-  // ---- FORGOT PASSWORD ---------------------------------------------------
-  if (screen === "FORGOT_PASSWORD") {
-    if (!email) {
-      return terminal({ status: "error", message: "Email is required." }, req.flow_token);
-    }
-    try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await supabaseAdmin.auth.admin.generateLink({
-        type: "recovery",
-        email,
-        options: { redirectTo: `${APP_URL}/auth` },
-      });
-    } catch (err) {
-      console.error("recovery link error", err);
-    }
-    // Always the same answer — never reveal whether the account exists.
-    return terminal(
-      { status: "reset_sent", message: "If that email has an account, a reset link is on its way." },
-      req.flow_token,
-    );
-  }
-
-  return { screen, data: {} };
-}
-
-// One-time login link so the WhatsApp user lands in the web app already signed in.
-async function magicLink(email: string): Promise<string | null> {
-  try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
-      type: "magiclink",
-      email,
-      options: { redirectTo: `${APP_URL}/dashboard` },
-    });
-    if (error) throw error;
-    return data.properties?.action_link ?? null;
-  } catch (err) {
-    console.error("magic link error", err);
-    return null;
-  }
-}
-
 
 function verifySignature(rawBody: string, header: string | null) {
   const appSecret = process.env.WHATSAPP_APP_SECRET;
@@ -353,7 +162,7 @@ export const Route = createFileRoute("/api/public/whatsapp-flow")({
         return new Response("ok", { status: 200 });
       },
       POST: async ({ request }) => {
-        
+
         try {
           const rawBody = await request.text();
 
@@ -377,7 +186,9 @@ export const Route = createFileRoute("/api/public/whatsapp-flow")({
           }
 
           const { decrypted, aesKey, iv } = decryptedReq;
-          const responsePayload = await handleAction(decrypted);
+          const decryptedBody = JSON.parse(decrypted.toString("utf8"));
+
+          const responsePayload = await getNextScreen(decryptedBody);
           const encrypted = encryptResponse(responsePayload, aesKey, iv);
 
           return new Response(encrypted, {
@@ -392,4 +203,3 @@ export const Route = createFileRoute("/api/public/whatsapp-flow")({
     },
   },
 });
-
