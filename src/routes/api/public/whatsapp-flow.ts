@@ -6,7 +6,6 @@ import {
   timingSafeEqual,
   privateDecrypt,
   constants,
-  createPrivateKey,
 } from "node:crypto";
 
 // WhatsApp Flow Data Endpoint
@@ -24,7 +23,7 @@ function loadPrivateKey() {
   const pem = process.env.WHATSAPP_FLOW_PRIVATE_KEY;
   if (!pem) throw new Error("WHATSAPP_FLOW_PRIVATE_KEY is not set");
   const passphrase = process.env.WHATSAPP_FLOW_PASSPHRASE || undefined;
-  return createPrivateKey({ key: pem, passphrase });
+  return { pem, passphrase };
 }
 
 function decryptRequest(body: {
@@ -32,11 +31,12 @@ function decryptRequest(body: {
   encrypted_aes_key: string;
   initial_vector: string;
 }) {
-  const privateKey = loadPrivateKey();
+  const { pem, passphrase } = loadPrivateKey();
 
   const aesKey = privateDecrypt(
     {
-      key: privateKey,
+      key: pem,
+      passphrase,
       padding: constants.RSA_PKCS1_OAEP_PADDING,
       oaepHash: "sha256",
     },
