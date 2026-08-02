@@ -1,19 +1,10 @@
 /**
  * WhatsApp Flows - Flow Logic (Production-Ready)
  *
- * Concerns addressed:
- * 1. No longer trust user_id from client → use server-side flow sessions
- * 2. Create Supabase clients once per request
- * 3. START_TRIP → TRIP_STARTED screen
- * 4. Simplify errorResponse helper
- * 5. Simplify successResponse helper
- * 6. Simplify HOME routing with a lookup object
- * 7. Stronger validation (trip name, odometer)
- * 8. Consistent helper usage everywhere
- * 9. Repository layer for trips
- * 10. Structured logging (info/error)
- * 11. Clearer naming (trip_id)
- * 12. Structure ready for splitting into handler modules
+ * Fixes applied:
+ * - session_token used consistently (no typos)
+ * - user_id fallback removed from resolveUserFromSession
+ * - TRIP_STARTED screen fully integrated
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -157,27 +148,20 @@ async function resolveFlowSession(
 }
 
 /**
- * Get user_id from either:
- * - session_token (preferred)
- * - legacy user_id field (for backward compatibility, can be removed later)
+ * Get user_id from session_token only.
+ * No fallback to user_id from the client.
  */
 async function resolveUserFromSession(
   adminClient: ReturnType<typeof createAdminClient>,
   data: any,
 ): Promise<string | null> {
   const sessionToken = data?.session_token as string | undefined;
-  if (sessionToken) {
-    const userId = await resolveFlowSession(adminClient, sessionToken);
-    if (userId) return userId;
+  if (!sessionToken) {
+    return null;
   }
 
-  // Fallback (legacy): directly use user_id from payload (not recommended long-term)
-  const legacyUserId = data?.user_id as string | undefined;
-  if (legacyUserId) {
-    return legacyUserId;
-  }
-
-  return null;
+  const userId = await resolveFlowSession(adminClient, sessionToken);
+  return userId; // null if invalid/expired
 }
 
 // ---------- Repository: Trips ----------
@@ -365,8 +349,8 @@ export const getNextScreen = async (decryptedBody: any) => {
       return {
         screen: "HOME",
         data: {
-          session_token,
-          user_id: auth.user.id, // keep for backward compatibility if needed
+          session_token: sessionToken,
+          user_id: auth.user.id, // kept for backward compatibility if needed
         },
       };
     }
@@ -467,8 +451,7 @@ export const getNextScreen = async (decryptedBody: any) => {
     }
 
     case "TRIP_STARTED": {
-      // This is a post-action screen that lets the user choose next steps.
-      // For now, just echo back to HOME with trip context.
+      // Post-action screen that returns to HOME with trip context
       const userId = await resolveUserFromSession(adminClient, data);
 
       return {
@@ -506,7 +489,6 @@ export const getNextScreen = async (decryptedBody: any) => {
       }
 
       // TODO: persist expense to DB when table is ready.
-      // For now, just return a success response with the submitted data.
       return successResponse(flow_token, {
         status: "expense_submitted",
         merchant: data?.merchant,
@@ -525,7 +507,7 @@ export const getNextScreen = async (decryptedBody: any) => {
         return errorResponse(flow_token, "Session expired. Please sign in again.");
       }
 
-      // Use trip_id instead of trip_project
+      // Use trip_id (trip_project kept for backward compatibility)
       const tripId = String(data?.trip_id ?? data?.trip_project ?? "");
 
       const endOdometerRaw = data?.end_odometer;
