@@ -2,6 +2,8 @@
  * WhatsApp Flows - Flow Logic
  */
 
+import { supabaseAdmin } from "@/lib/supabase/admin";
+
 export const getNextScreen = async (decryptedBody: any) => {
   const { screen, data, action, flow_token } = decryptedBody;
 
@@ -14,7 +16,7 @@ export const getNextScreen = async (decryptedBody: any) => {
     };
   }
 
-  // Client-side validation errors
+  // Client validation errors
   if (data?.error) {
     console.warn("Received client error:", data);
 
@@ -25,7 +27,7 @@ export const getNextScreen = async (decryptedBody: any) => {
     };
   }
 
-  // Initial request when the Flow opens
+  // Flow opened
   if (action === "INIT") {
     return {
       screen: "HOME",
@@ -33,16 +35,22 @@ export const getNextScreen = async (decryptedBody: any) => {
     };
   }
 
-  // Requests from the Flow
+
   if (action === "data_exchange") {
+
     switch (screen) {
+
+      // HOME MENU
       case "HOME":
-        switch (data?.action) {
-          case "trip":
+
+        switch(data?.action) {
+
+          case "start":
             return {
-              screen: "TRIP_MENU",
+              screen: "START_TRIP",
               data: {},
             };
+
 
           case "receipt":
             return {
@@ -50,30 +58,6 @@ export const getNextScreen = async (decryptedBody: any) => {
               data: {},
             };
 
-          case "report":
-            return {
-              screen: "GENERATE_REPORT",
-              data: {},
-            };
-
-          default:
-            break;
-        }
-        break;
-
-      case "TRIP_MENU":
-        switch (data?.trip_action) {
-          case "start":
-            return {
-              screen: "START_TRIP",
-              data: {},
-            };
-
-          case "edit":
-            return {
-              screen: "EDIT_TRIP",
-              data: {},
-            };
 
           case "end":
             return {
@@ -81,30 +65,132 @@ export const getNextScreen = async (decryptedBody: any) => {
               data: {},
             };
 
-          default:
-            break;
+
+          case "report":
+            return {
+              screen: "GENERATE_REPORT",
+              data: {},
+            };
         }
+
         break;
 
+
+      // START TRIP SUBMISSION
       case "START_TRIP":
-      case "EDIT_TRIP":
-      case "END_TRIP":
-      case "UPLOAD_RECEIPT":
-      case "GENERATE_REPORT":
-        return {
-          screen: "SUCCESS",
-          data: {
-            extension_message_response: {
-              params: {
-                flow_token,
+
+        if(data?.action === "start_trip") {
+
+          /*
+          Here we will:
+          1. Get WhatsApp phone
+          2. Find profiles.id
+          3. Insert trip
+          */
+
+          return {
+            screen: "SUCCESS",
+            data: {
+              extension_message_response: {
+                params: {
+                  flow_token,
+                },
               },
             },
-          },
-        };
+          };
+        }
+
+        break;
+
+
+
+      // RECEIPT UPLOAD
+      case "UPLOAD_RECEIPT":
+
+        if(data?.action === "receipt_upload") {
+
+          return {
+            screen:"EXPENSE_DETAILS",
+            data:{}
+          };
+
+        }
+
+        break;
+
+
+
+      // EXPENSE SAVE
+      case "EXPENSE_DETAILS":
+
+        if(data?.action === "create_expense") {
+
+          return {
+            screen:"SUCCESS",
+            data:{
+              extension_message_response:{
+                params:{
+                  flow_token
+                }
+              }
+            }
+          };
+
+        }
+
+        break;
+
+
+
+      // END TRIP
+      case "END_TRIP":
+
+        if(data?.action === "end_trip") {
+
+          return {
+            screen:"SUCCESS",
+            data:{
+              extension_message_response:{
+                params:{
+                  flow_token
+                }
+              }
+            }
+          };
+
+        }
+
+        break;
+
+
+
+      // REPORT
+      case "GENERATE_REPORT":
+
+        if(data?.action === "generate_report") {
+
+          return {
+            screen:"SUCCESS",
+            data:{
+              extension_message_response:{
+                params:{
+                  flow_token
+                }
+              }
+            }
+          };
+
+        }
+
+        break;
     }
   }
 
-  console.error("Unhandled request:", decryptedBody);
 
-  throw new Error("Unhandled Flow request.");
+  console.error(
+    "Unhandled Flow request:",
+    decryptedBody
+  );
+
+  throw new Error("Unhandled Flow request");
 };
