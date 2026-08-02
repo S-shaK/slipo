@@ -42,19 +42,28 @@ function loadPrivateKey() {
     throw new Error("WHATSAPP_FLOW_PRIVATE_KEY is not set");
   }
 
-  console.log("RAW LENGTH:", raw.length);
-  console.log("RAW START:", JSON.stringify(raw.substring(0, 80)));
-  console.log("RAW END:", JSON.stringify(raw.substring(raw.length - 80)));
+  let pem = raw
+    .replace(/\\n/g, "\n")
+    .replace(/\r/g, "")
+    .trim();
 
-  const pem = raw.replace(/\\n/g, "\n").replace(/\r/g, "");
+  // Fix Lovable single-line secret formatting
+  if (!pem.includes("\n")) {
+    const body = pem
+      .replace("-----BEGIN PRIVATE KEY-----", "")
+      .replace("-----END PRIVATE KEY-----", "")
+      .replace(/\s+/g, "");
+
+    const wrapped = body.match(/.{1,64}/g)?.join("\n");
+
+    pem = `-----BEGIN PRIVATE KEY-----\n${wrapped}\n-----END PRIVATE KEY-----`;
+  }
 
   console.log("PEM FIRST LINE:", pem.split("\n")[0]);
   console.log("PEM SECOND LINE:", pem.split("\n")[1]);
   console.log("PEM LAST LINE:", pem.split("\n").at(-1));
 
-  const passphrase = process.env.WHATSAPP_FLOW_PASSPHRASE ?? "";
-
-  return { pem, passphrase };
+  return { pem };
 }
 function decryptRequest(body: {
   encrypted_flow_data: string;
