@@ -21,21 +21,6 @@ type FlowRequest = {
 };
 try {
   const { pem, passphrase } = loadPrivateKey();
-import { createPrivateKey } from "node:crypto";
-
-try {
-  const key = createPrivateKey({
-    key: pem,
-    passphrase,
-  });
-
-  console.log("PRIVATE KEY PARSED OK");
-  console.log("KEY TYPE:", key.asymmetricKeyType);
-} catch (e) {
-  console.error("PRIVATE KEY PARSE ERROR");
-  console.error(e);
-  throw e;
-}
   const pub = createPublicKey({
     key: pem,
     passphrase,
