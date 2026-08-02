@@ -11,7 +11,13 @@ import { createPublicKey } from "node:crypto";
 
 // WhatsApp Flow Data Endpoint
 // Meta docs: https://developers.facebook.com/docs/whatsapp/flows/reference/implementingyourflowendpoint
+POST: async ({ request }) => {
+  console.log("🚀 WHATSAPP FLOW VERSION 123456");
 
+  try {
+    const rawBody = await request.text();
+
+    //
 type FlowRequest = {
   version: string;
   action: "ping" | "INIT" | "data_exchange" | "BACK";
