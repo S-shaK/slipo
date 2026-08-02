@@ -21,7 +21,21 @@ type FlowRequest = {
 };
 try {
   const { pem, passphrase } = loadPrivateKey();
+import { createPrivateKey } from "node:crypto";
 
+try {
+  const key = createPrivateKey({
+    key: pem,
+    passphrase,
+  });
+
+  console.log("PRIVATE KEY PARSED OK");
+  console.log("KEY TYPE:", key.asymmetricKeyType);
+} catch (e) {
+  console.error("PRIVATE KEY PARSE ERROR");
+  console.error(e);
+  throw e;
+}
   const pub = createPublicKey({
     key: pem,
     passphrase,
@@ -37,9 +51,24 @@ try {
   console.error(e);
 }
 function loadPrivateKey() {
-  const pem = process.env.WHATSAPP_FLOW_PRIVATE_KEY;
-  if (!pem) throw new Error("WHATSAPP_FLOW_PRIVATE_KEY is not set");
-  const passphrase = process.env.WHATSAPP_FLOW_PASSPHRASE || undefined;
+  const raw = process.env.WHATSAPP_FLOW_PRIVATE_KEY;
+
+  if (!raw) {
+    throw new Error("WHATSAPP_FLOW_PRIVATE_KEY is not set");
+  }
+
+  console.log("RAW LENGTH:", raw.length);
+  console.log("RAW START:", JSON.stringify(raw.substring(0, 80)));
+  console.log("RAW END:", JSON.stringify(raw.substring(raw.length - 80)));
+
+  const pem = raw.replace(/\\n/g, "\n").replace(/\r/g, "");
+
+  console.log("PEM FIRST LINE:", pem.split("\n")[0]);
+  console.log("PEM SECOND LINE:", pem.split("\n")[1]);
+  console.log("PEM LAST LINE:", pem.split("\n").at(-1));
+
+  const passphrase = process.env.WHATSAPP_FLOW_PASSPHRASE ?? "";
+
   return { pem, passphrase };
 }
 function decryptRequest(body: {
