@@ -27,164 +27,258 @@ export const getNextScreen = async (decryptedBody: any) => {
     };
   }
 
-  // Flow opened
+
+  // Flow opens
   if (action === "INIT") {
     return {
-      screen: "HOME",
+      screen: "SIGN_IN",
       data: {},
     };
   }
 
 
-  if (action === "data_exchange") {
-
-    switch (screen) {
-
-      // HOME MENU
-      case "HOME":
-
-        switch(data?.action) {
-
-          case "start":
-            return {
-              screen: "START_TRIP",
-              data: {},
-            };
-
-
-          case "receipt":
-            return {
-              screen: "UPLOAD_RECEIPT",
-              data: {},
-            };
-
-
-          case "end":
-            return {
-              screen: "END_TRIP",
-              data: {},
-            };
-
-
-          case "report":
-            return {
-              screen: "GENERATE_REPORT",
-              data: {},
-            };
-        }
-
-        break;
-
-
-      // START TRIP SUBMISSION
-      case "START_TRIP":
-
-        if(data?.action === "start_trip") {
-
-          /*
-          Here we will:
-          1. Get WhatsApp phone
-          2. Find profiles.id
-          3. Insert trip
-          */
-
-          return {
-            screen: "SUCCESS",
-            data: {
-              extension_message_response: {
-                params: {
-                  flow_token,
-                },
-              },
-            },
-          };
-        }
-
-        break;
-
-
-
-      // RECEIPT UPLOAD
-      case "UPLOAD_RECEIPT":
-
-        if(data?.action === "receipt_upload") {
-
-          return {
-            screen:"EXPENSE_DETAILS",
-            data:{}
-          };
-
-        }
-
-        break;
-
-
-
-      // EXPENSE SAVE
-      case "EXPENSE_DETAILS":
-
-        if(data?.action === "create_expense") {
-
-          return {
-            screen:"SUCCESS",
-            data:{
-              extension_message_response:{
-                params:{
-                  flow_token
-                }
-              }
-            }
-          };
-
-        }
-
-        break;
-
-
-
-      // END TRIP
-      case "END_TRIP":
-
-        if(data?.action === "end_trip") {
-
-          return {
-            screen:"SUCCESS",
-            data:{
-              extension_message_response:{
-                params:{
-                  flow_token
-                }
-              }
-            }
-          };
-
-        }
-
-        break;
-
-
-
-      // REPORT
-      case "GENERATE_REPORT":
-
-        if(data?.action === "generate_report") {
-
-          return {
-            screen:"SUCCESS",
-            data:{
-              extension_message_response:{
-                params:{
-                  flow_token
-                }
-              }
-            }
-          };
-
-        }
-
-        break;
-    }
+  // Back button
+  if (action === "BACK") {
+    return {
+      screen: "SIGN_IN",
+      data: {},
+    };
   }
+
+
+  if (action !== "data_exchange") {
+    return {
+      data: {},
+    };
+  }
+
+
+  const email = String(data?.email ?? "")
+    .trim()
+    .toLowerCase();
+
+
+
+  // --------------------------------------------------
+  // SIGN IN
+  // --------------------------------------------------
+
+  if (screen === "SIGN_IN") {
+
+    const password = String(data?.password ?? "");
+
+    if (!email || !password) {
+      return {
+        screen: "SUCCESS",
+        data: {
+          extension_message_response: {
+            params: {
+              flow_token,
+              status: "error",
+              message: "Email and password are required"
+            }
+          }
+        }
+      };
+    }
+
+
+    const { data: auth, error } =
+      await supabaseAdmin.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+
+    if (error || !auth.session) {
+
+      return {
+        screen: "SUCCESS",
+        data: {
+          extension_message_response: {
+            params: {
+              flow_token,
+              status: "error",
+              message: "Invalid email or password"
+            }
+          }
+        }
+      };
+    }
+
+
+    return {
+      screen: "SUCCESS",
+      data: {
+        extension_message_response: {
+          params: {
+            flow_token,
+            status: "signed_in",
+            user_id: auth.user.id
+          }
+        }
+      }
+    };
+
+  }
+
+
+
+  // --------------------------------------------------
+  // SIGN UP
+  // --------------------------------------------------
+
+  if (screen === "SIGN_UP") {
+
+    const password = String(data?.password ?? "");
+    const confirmPassword =
+      String(data?.confirm_password ?? "");
+
+
+    const fullName =
+      [
+        data?.first_name,
+        data?.last_name
+      ]
+      .map((v)=>String(v ?? "").trim())
+      .filter(Boolean)
+      .join(" ");
+
+
+
+    if (!email || !password) {
+
+      return {
+        screen:"SUCCESS",
+        data:{
+          extension_message_response:{
+            params:{
+              flow_token,
+              status:"error",
+              message:"Email and password required"
+            }
+          }
+        }
+      };
+
+    }
+
+
+    if(password !== confirmPassword){
+
+      return {
+        screen:"SUCCESS",
+        data:{
+          extension_message_response:{
+            params:{
+              flow_token,
+              status:"error",
+              message:"Passwords do not match"
+            }
+          }
+        }
+      };
+
+    }
+
+
+
+    const { data: created, error } =
+      await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm:true,
+        user_metadata:{
+          full_name:fullName,
+          source:"whatsapp_flow"
+        }
+      });
+
+
+
+    if(error){
+
+      return {
+        screen:"SUCCESS",
+        data:{
+          extension_message_response:{
+            params:{
+              flow_token,
+              status:"error",
+              message:error.message
+            }
+          }
+        }
+      };
+
+    }
+
+
+
+    return {
+      screen:"SUCCESS",
+      data:{
+        extension_message_response:{
+          params:{
+            flow_token,
+            status:"signed_up",
+            user_id:created.user.id
+          }
+        }
+      }
+    };
+
+  }
+
+
+
+  // --------------------------------------------------
+  // FORGOT PASSWORD
+  // --------------------------------------------------
+
+  if(screen === "FORGOT_PASSWORD") {
+
+
+    if(!email){
+
+      return {
+        screen:"SUCCESS",
+        data:{
+          extension_message_response:{
+            params:{
+              flow_token,
+              status:"error",
+              message:"Email required"
+            }
+          }
+        }
+      };
+
+    }
+
+
+
+    await supabaseAdmin.auth.admin.generateLink({
+      type:"recovery",
+      email,
+    });
+
+
+
+    return {
+      screen:"SUCCESS",
+      data:{
+        extension_message_response:{
+          params:{
+            flow_token,
+            status:"reset_sent"
+          }
+        }
+      }
+    };
+
+  }
+
 
 
   console.error(
@@ -192,5 +286,8 @@ export const getNextScreen = async (decryptedBody: any) => {
     decryptedBody
   );
 
-  throw new Error("Unhandled Flow request");
+
+  throw new Error(
+    "Unhandled Flow request"
+  );
 };
