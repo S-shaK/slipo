@@ -244,7 +244,7 @@ function verifySignature(rawBody: string, header: string | null) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export const Route = createFileRoute("/api/public/whatsapp-flow")({
+export const Route = createFileRoute("/api/whatsapp-flow")({
   server: {
     handlers: {
       // Meta webhook verification handshake (hub.challenge / verify token)
