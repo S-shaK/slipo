@@ -7,6 +7,7 @@ import {
   privateDecrypt,
   constants,
 } from "node:crypto";
+import { createPublicKey } from "node:crypto";
 
 // WhatsApp Flow Data Endpoint
 // Meta docs: https://developers.facebook.com/docs/whatsapp/flows/reference/implementingyourflowendpoint
@@ -18,14 +19,29 @@ type FlowRequest = {
   data?: Record<string, unknown>;
   flow_token?: string;
 };
+try {
+  const { pem, passphrase } = loadPrivateKey();
 
+  const pub = createPublicKey({
+    key: pem,
+    passphrase,
+  }).export({
+    type: "spki",
+    format: "pem",
+  });
+
+  console.log("========== SERVER PUBLIC KEY ==========");
+  console.log(pub.toString());
+} catch (e) {
+  console.error("FAILED TO LOAD PRIVATE KEY");
+  console.error(e);
+}
 function loadPrivateKey() {
   const pem = process.env.WHATSAPP_FLOW_PRIVATE_KEY;
   if (!pem) throw new Error("WHATSAPP_FLOW_PRIVATE_KEY is not set");
   const passphrase = process.env.WHATSAPP_FLOW_PASSPHRASE || undefined;
   return { pem, passphrase };
 }
-
 function decryptRequest(body: {
   encrypted_flow_data: string;
   encrypted_aes_key: string;
@@ -33,29 +49,82 @@ function decryptRequest(body: {
 }) {
   const { pem, passphrase } = loadPrivateKey();
 
-  const aesKey = privateDecrypt(
-    {
-      key: pem,
-      passphrase,
-      padding: constants.RSA_PKCS1_OAEP_PADDING,
-      oaepHash: "sha256",
-    },
-    Buffer.from(body.encrypted_aes_key, "base64"),
-  );
+  console.log("========== FLOW DECRYPT ==========");
+  console.log("Encrypted AES key length:", body.encrypted_aes_key.length);
+  console.log("Encrypted flow length:", body.encrypted_flow_data.length);
+  console.log("IV length:", body.initial_vector.length);
+
+  let aesKey: Buffer;
+
+  try {
+    aesKey = privateDecrypt(
+      {
+        key: pem,
+        passphrase,
+        padding: constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: "sha256",
+      },
+      Buffer.from(body.encrypted_aes_key, "base64"),
+    );
+
+    console.log("RSA decrypt successful");
+    console.log("AES key length:", aesKey.length);
+  } catch (err) {
+    console.error("========== RSA DECRYPT FAILED ==========");
+    console.error(err);
+    throw err;
+  }
 
   const flowDataBuffer = Buffer.from(body.encrypted_flow_data, "base64");
   const iv = Buffer.from(body.initial_vector, "base64");
 
-  // Last 16 bytes are the GCM auth tag
+  console.log("Encrypted bytes:", flowDataBuffer.length);
+  console.log("IV bytes:", iv.length);
+
   const TAG_LEN = 16;
-  const encrypted = flowDataBuffer.subarray(0, flowDataBuffer.length - TAG_LEN);
-  const tag = flowDataBuffer.subarray(flowDataBuffer.length - TAG_LEN);
 
-  const decipher = createDecipheriv("aes-128-gcm", aesKey, iv);
-  decipher.setAuthTag(tag);
-  const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  const encrypted = flowDataBuffer.subarray(
+    0,
+    flowDataBuffer.length - TAG_LEN
+  );
 
-  return { decrypted: JSON.parse(decrypted.toString("utf8")) as FlowRequest, aesKey, iv };
+  const tag = flowDataBuffer.subarray(
+    flowDataBuffer.length - TAG_LEN
+  );
+
+  console.log("Ciphertext bytes:", encrypted.length);
+  console.log("Auth tag bytes:", tag.length);
+
+  try {
+    const decipher = createDecipheriv(
+      "aes-128-gcm",
+      aesKey,
+      iv
+    );
+
+    decipher.setAuthTag(tag);
+
+    const decrypted = Buffer.concat([
+      decipher.update(encrypted),
+      decipher.final(),
+    ]);
+
+    console.log("AES decrypt successful");
+
+    return {
+      decrypted: JSON.parse(decrypted.toString("utf8")) as FlowRequest,
+      aesKey,
+      iv,
+    };
+  } catch (err) {
+    console.error("========== AES DECRYPT FAILED ==========");
+    console.error("AES key:", aesKey.toString("hex"));
+    console.error("IV:", iv.toString("hex"));
+    console.error("Ciphertext length:", encrypted.length);
+    console.error("Tag:", tag.toString("hex"));
+    console.error(err);
+    throw err;
+  }
 }
 
 function encryptResponse(payload: unknown, aesKey: Buffer, iv: Buffer) {
