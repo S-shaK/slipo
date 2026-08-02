@@ -157,61 +157,56 @@ export const getNextScreen = async (decryptedBody: any) => {
   // HOME (Live Trips menu)
   // --------------------------------------------------
 
-  if (screen === "HOME") {
+if (screen === "HOME") {
+  const userId = String(data?.user_id ?? "");
+  const homeAction = String(data?.menu_choice ?? "");
 
-    const userId = String(data?.user_id ?? "");
-    const homeAction = String(data?.action ?? "");
+  console.log("HOME:", { userId, homeAction });
 
-    const nextScreen: Record<string, string> = {
-      start: "START_TRIP",
-      receipt: "UPLOAD_RECEIPT",
-      end: "END_TRIP",
-      report: "GENERATE_REPORT",
-    };
-
-    if (!nextScreen[homeAction]) {
+  switch (homeAction) {
+    case "start":
       return {
-        screen: "HOME",
-        data: { user_id: userId },
-      };
-    }
-
-    // END_TRIP and GENERATE_REPORT need a dropdown of the user's actual
-    // trips, so their "trip_project" field references a real trip id
-    // instead of free text.
-    if (homeAction === "end" || homeAction === "report") {
-      const query = getSupabaseClient()
-        .from("trips")
-        .select("id, name")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false });
-
-      const { data: trips, error } =
-        homeAction === "end"
-          ? await query.in("status", ["planned", "active"])
-          : await query;
-
-      if (error) {
-        console.error("Failed to load trips:", error);
-      }
-
-      return {
-        screen: nextScreen[homeAction],
+        screen: "START_TRIP",
         data: {
           user_id: userId,
-          trips: (trips ?? []).map((t) => ({ id: t.id, title: t.name })),
         },
       };
-    }
 
-    return {
-      screen: nextScreen[homeAction],
-      data: { user_id: userId },
-    };
+    case "receipt":
+      return {
+        screen: "UPLOAD_RECEIPT",
+        data: {
+          user_id: userId,
+        },
+      };
 
+    case "end":
+      return {
+        screen: "END_TRIP",
+        data: {
+          user_id: userId,
+        },
+      };
+
+    case "report":
+      return {
+        screen: "GENERATE_REPORT",
+        data: {
+          user_id: userId,
+        },
+      };
+
+    default:
+      console.log("Unknown menu choice:", homeAction);
+
+      return {
+        screen: "HOME",
+        data: {
+          user_id: userId,
+        },
+      };
   }
-
-
+}
 
   // --------------------------------------------------
   // START TRIP
