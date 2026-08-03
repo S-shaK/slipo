@@ -9,6 +9,12 @@
 
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
+import {
+  downloadFlowMedia,
+  extractReceiptFromBytes,
+  RECEIPT_CATEGORIES,
+  type FlowMediaItem,
+} from "./media";
 
 const APP_URL = process.env.APP_PUBLIC_URL || "https://slipo.lovable.app";
 
@@ -237,6 +243,54 @@ async function endTrip(
     throw error;
   }
 }
+
+/** Trips the user can still attach receipts to / end, newest first. */
+async function listOpenTrips(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string,
+) {
+  const { data, error } = await adminClient
+    .from("trips")
+    .select("id, name, status")
+    .eq("user_id", userId)
+    .in("status", ["active", "planned"])
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    console.error({ msg: "Failed to list trips", user_id: userId, error: error.message });
+    return [];
+  }
+
+  return (data ?? []).map((t) => ({ id: t.id, title: t.name }));
+}
+
+/** Decrypt the uploaded photo, store it, and run AI extraction. */
+async function ingestReceiptImage(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string,
+  item: FlowMediaItem,
+) {
+  const bytes = await downloadFlowMedia(item);
+  const name = item.file_name ?? "receipt.jpg";
+  const ext = (name.split(".").pop() || "jpg").toLowerCase();
+  const mime =
+    ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+  const path = `${userId}/${crypto.randomUUID()}.${ext}`;
+
+  const { error } = await adminClient.storage
+    .from("receipts")
+    .upload(path, bytes, { contentType: mime, upsert: false });
+
+  if (error) {
+    console.error({ msg: "Receipt upload failed", user_id: userId, error: error.message });
+    throw new Error("upload_failed");
+  }
+
+  const extracted = await extractReceiptFromBytes(bytes, mime);
+  return { path, extracted };
+}
+
 
 // ---------- Validation Helpers ----------
 
