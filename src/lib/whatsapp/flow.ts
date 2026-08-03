@@ -69,6 +69,7 @@ function successResponse(flow_token: string, params: Record<string, any> = {}) {
     screen: "SUCCESS",
     data: {
       status: params.status ?? "ok",
+      message: params.message ?? "Your request has been submitted.",
       extension_message_response: {
         params: {
           flow_token,
