@@ -62,7 +62,6 @@ export async function sendFlowMessage({
           flow_action: "navigate",
           flow_action_payload: {
             screen: "SIGN_IN",
-            data: {},
           },
           // Draft flows only deliver to numbers on the tester list.
           mode,
