@@ -448,11 +448,14 @@ export const getNextScreen = async (decryptedBody: any) => {
         };
       }
 
+      const needsTrips = nextScreen !== "START_TRIP";
+
       return {
         screen: nextScreen,
         data: {
           session_token: data?.session_token,
           user_id: userId,
+          ...(needsTrips ? { trips: await listOpenTrips(adminClient, userId) } : {}),
         },
       };
     }
@@ -527,13 +530,46 @@ export const getNextScreen = async (decryptedBody: any) => {
         return errorResponse(flow_token, "Session expired. Please sign in again.");
       }
 
-      return {
-        screen: "EXPENSE_DETAILS",
-        data: {
-          session_token: data?.session_token,
+      const media = (data?.receipt_image ?? data?.receipt ?? []) as FlowMediaItem[];
+      const item = Array.isArray(media) ? media[0] : undefined;
+
+      if (!item?.cdn_url) {
+        return errorResponse(flow_token, "Please attach a photo of the receipt.");
+      }
+
+      const trips = await listOpenTrips(adminClient, userId);
+
+      try {
+        const { path, extracted } = await ingestReceiptImage(adminClient, userId, item);
+
+        console.info({
+          msg: "Receipt uploaded and extracted",
           user_id: userId,
-        },
-      };
+          image_path: path,
+        });
+
+        return {
+          screen: "EXPENSE_DETAILS",
+          data: {
+            session_token: data?.session_token,
+            user_id: userId,
+            image_path: path,
+            trips,
+            categories: RECEIPT_CATEGORIES.map((c) => ({
+              id: c,
+              title: c.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()),
+            })),
+            merchant: extracted.vendor ?? "",
+            date: extracted.occurred_on ?? new Date().toISOString().slice(0, 10),
+            amount: extracted.amount !== null ? String(extracted.amount) : "",
+            currency: extracted.currency,
+            category: extracted.category,
+          },
+        };
+      } catch (err) {
+        console.error({ msg: "Receipt ingest failed", user_id: userId, error: String(err) });
+        return errorResponse(flow_token, "Could not read that receipt. Please try again.");
+      }
     }
 
     case "EXPENSE_DETAILS": {
@@ -543,17 +579,63 @@ export const getNextScreen = async (decryptedBody: any) => {
         return errorResponse(flow_token, "Session expired. Please sign in again.");
       }
 
-      // TODO: persist expense to DB when table is ready.
+      const imagePath = String(data?.image_path ?? "");
+      const tripId = String(data?.trip_id ?? data?.trip_project ?? "");
+
+      if (!imagePath) {
+        return errorResponse(flow_token, "Receipt image is missing. Please upload it again.");
+      }
+      if (!tripId) {
+        return errorResponse(flow_token, "Select the trip this receipt belongs to.");
+      }
+
+      const amount = Number(String(data?.amount ?? "").replace(/[^0-9.\-]/g, ""));
+      if (!Number.isFinite(amount) || amount < 0) {
+        return errorResponse(flow_token, "Amount must be a non-negative number.");
+      }
+
+      const rawCategory = String(data?.category ?? "other");
+      const category = (RECEIPT_CATEGORIES as readonly string[]).includes(rawCategory)
+        ? rawCategory
+        : "other";
+
+      const rawDate = String(data?.date ?? "");
+      const occurredOn = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+        ? rawDate
+        : new Date().toISOString().slice(0, 10);
+
+      const { error } = await adminClient.from("receipts").insert({
+        trip_id: tripId,
+        user_id: userId,
+        category: category as Database["public"]["Enums"]["expense_category"],
+        amount,
+        currency: String(data?.currency ?? "USD").slice(0, 8) || "USD",
+        vendor: data?.merchant ? String(data.merchant) : null,
+        occurred_on: occurredOn,
+        notes: data?.description ? String(data.description) : null,
+        image_path: imagePath,
+      });
+
+      if (error) {
+        console.error({
+          msg: "Failed to insert receipt",
+          user_id: userId,
+          trip_id: tripId,
+          error: error.message,
+        });
+        return errorResponse(flow_token, "Could not save the receipt. Please try again.");
+      }
+
+      console.info({ msg: "Receipt saved", user_id: userId, trip_id: tripId });
+
       return successResponse(flow_token, {
         status: "expense_submitted",
-        merchant: data?.merchant,
-        date: data?.date,
-        amount: data?.amount,
-        vat: data?.vat,
-        trip_id: data?.trip_id ?? data?.trip_project,
-        description: data?.description,
+        message: `Receipt saved${data?.merchant ? ` for ${data.merchant}` : ""} — ${amount.toFixed(2)} added to your trip.`,
+        trip_id: tripId,
+        amount,
       });
     }
+
 
     case "END_TRIP": {
       const userId = await resolveUserFromSession(adminClient, data);
