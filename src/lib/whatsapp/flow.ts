@@ -5,6 +5,12 @@
  * - session_token used consistently (no typos)
  * - user_id fallback removed from resolveUserFromSession
  * - TRIP_STARTED screen fully integrated
+ * - amount sent as number (not string) to match EXPENSE_DETAILS's
+ *   TextInput input-type: "number" and the data schema in flow.json
+ * - removed VITE_-prefixed fallback for the service-role key: Vite bundles
+ *   VITE_* vars into client-side JS at build time, so a service-role key
+ *   under that name would ship to every browser and bypass RLS entirely.
+ *   This key must only ever exist as a server-only Secret.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -44,9 +50,8 @@ function createPublicClient() {
 function createAdminClient() {
   const SUPABASE_URL =
     process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+  // Server-only. Deliberately no VITE_ fallback here — see file header.
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error(
@@ -561,7 +566,10 @@ export const getNextScreen = async (decryptedBody: any) => {
             })),
             merchant: extracted.vendor ?? "",
             date: extracted.occurred_on ?? new Date().toISOString().slice(0, 10),
-            amount: extracted.amount !== null ? String(extracted.amount) : "",
+            // Sent as a number (not String()) to match EXPENSE_DETAILS's
+            // "amount" TextInput (input-type: "number") and the data
+            // schema in flow.json, which declares amount: type "number".
+            amount: extracted.amount !== null ? extracted.amount : null,
             currency: extracted.currency,
             category: extracted.category,
           },
