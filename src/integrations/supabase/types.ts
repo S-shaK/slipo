@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      flow_sessions: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          session_token: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          id?: string
+          session_token: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          session_token?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -22,6 +46,7 @@ export type Database = {
           id: string
           manager_id: string | null
           updated_at: string
+          whatsapp_phone: string | null
         }
         Insert: {
           created_at?: string
@@ -30,6 +55,7 @@ export type Database = {
           id: string
           manager_id?: string | null
           updated_at?: string
+          whatsapp_phone?: string | null
         }
         Update: {
           created_at?: string
@@ -38,6 +64,7 @@ export type Database = {
           id?: string
           manager_id?: string | null
           updated_at?: string
+          whatsapp_phone?: string | null
         }
         Relationships: []
       }
@@ -172,6 +199,27 @@ export type Database = {
           track_mileage?: boolean
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      user_identity: {
+        Row: {
+          id: string
+          identifier: string
+          provider: string
+          user_id: string | null
+        }
+        Insert: {
+          id?: string
+          identifier: string
+          provider: string
+          user_id?: string | null
+        }
+        Update: {
+          id?: string
+          identifier?: string
+          provider?: string
+          user_id?: string | null
         }
         Relationships: []
       }
