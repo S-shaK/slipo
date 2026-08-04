@@ -7,24 +7,23 @@ import {
   privateDecrypt,
   constants,
 } from "node:crypto";
-import { createPublicKey } from "node:crypto";
 import { getNextScreen } from "@/lib/whatsapp/flow";
 
 // WhatsApp Flow Data Endpoint
 // Meta docs: https://developers.facebook.com/docs/whatsapp/flows/reference/implementingyourflowendpoint
+//
+// FIX: removed a module-top-level try/catch block that used to call
+// loadPrivateKey() + createPublicKey().export() purely for debug logging
+// (its result, `pub`, was never used anywhere). That code ran as a side
+// effect of *importing this module* — i.e. on every cold start / route
+// registration, before any request handler exists. In this SSR/edge
+// framework, a throw during module evaluation happens outside any
+// handler's own try/catch, so it bypasses our error handling entirely
+// and surfaces as the framework's generic crash page instead of the
+// plain-text "Internal error" our POST handler would normally return.
+// That mismatch (HTML crash page vs. our own error text) is exactly
+// what showed up in the logs, so removing this dead code should fix it.
 
-try {
-  const { pem } = loadPrivateKey();
-  const pub = createPublicKey({
-    key: pem,
-  }).export({
-    type: "spki",
-    format: "pem",
-  });
-
-} catch (e) {
-  console.error("FAILED TO LOAD PRIVATE KEY");
-}
 function loadPrivateKey() {
   const raw = process.env.WHATSAPP_FLOW_PRIVATE_KEY;
 
@@ -49,9 +48,9 @@ function loadPrivateKey() {
     pem = `-----BEGIN PRIVATE KEY-----\n${wrapped}\n-----END PRIVATE KEY-----`;
   }
 
-
   return { pem };
 }
+
 function decryptRequest(body: {
   encrypted_flow_data: string;
   encrypted_aes_key: string;
@@ -73,14 +72,12 @@ function decryptRequest(body: {
 
     console.log("RSA decrypt successful");
     console.log("AES key length:", aesKey.length);
-} catch {
-  throw new Error("RSA decrypt failed");
-}
+  } catch {
+    throw new Error("RSA decrypt failed");
+  }
 
   const flowDataBuffer = Buffer.from(body.encrypted_flow_data, "base64");
   const iv = Buffer.from(body.initial_vector, "base64");
-
-
 
   const TAG_LEN = 16;
 
@@ -92,8 +89,6 @@ function decryptRequest(body: {
   const tag = flowDataBuffer.subarray(
     flowDataBuffer.length - TAG_LEN
   );
-
-
 
   try {
     const decipher = createDecipheriv(
@@ -109,16 +104,14 @@ function decryptRequest(body: {
       decipher.final(),
     ]);
 
-  
-
     return {
       decrypted,
       aesKey,
       iv,
     };
-} catch {
-  throw new Error("AES decrypt failed");
-}
+  } catch {
+    throw new Error("AES decrypt failed");
+  }
 }
 
 function encryptResponse(payload: unknown, aesKey: Buffer, iv: Buffer) {
@@ -162,6 +155,12 @@ export const Route = createFileRoute("/api/public/whatsapp-flow")({
         return new Response("ok", { status: 200 });
       },
       POST: async ({ request }) => {
+        // Fail loud and early, inside a context we control, if the key
+        // env var is missing — rather than letting it surface deep
+        // inside decryptRequest() with a less obvious log trail.
+        if (!process.env.WHATSAPP_FLOW_PRIVATE_KEY) {
+          console.error("WHATSAPP_FLOW_PRIVATE_KEY is not set");
+        }
 
         try {
           const rawBody = await request.text();
