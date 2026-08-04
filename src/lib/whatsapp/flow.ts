@@ -453,16 +453,24 @@ export const getNextScreen = async (decryptedBody: any) => {
         };
       }
 
-      const needsTrips = nextScreen !== "START_TRIP";
+      // The report screen can target live *and* completed trips; the other
+      // screens only make sense for open trips.
+      const trips =
+        nextScreen === "START_TRIP"
+          ? null
+          : nextScreen === "GENERATE_REPORT"
+            ? await listAllTrips(adminClient, userId)
+            : await listOpenTrips(adminClient, userId);
 
       return {
         screen: nextScreen,
         data: {
           session_token: data?.session_token,
           user_id: userId,
-          ...(needsTrips ? { trips: await listOpenTrips(adminClient, userId) } : {}),
+          ...(trips ? { trips } : {}),
         },
       };
+
     }
 
     case "START_TRIP": {
