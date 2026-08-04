@@ -21,6 +21,8 @@ import {
   RECEIPT_CATEGORIES,
   type FlowMediaItem,
 } from "./media";
+import { listAllTrips, generateTripReport, emailReport } from "./report";
+
 
 const APP_URL = process.env.APP_PUBLIC_URL || "https://slipo.lovable.app";
 
@@ -453,16 +455,24 @@ export const getNextScreen = async (decryptedBody: any) => {
         };
       }
 
-      const needsTrips = nextScreen !== "START_TRIP";
+      // The report screen can target live *and* completed trips; the other
+      // screens only make sense for open trips.
+      const trips =
+        nextScreen === "START_TRIP"
+          ? null
+          : nextScreen === "GENERATE_REPORT"
+            ? await listAllTrips(adminClient, userId)
+            : await listOpenTrips(adminClient, userId);
 
       return {
         screen: nextScreen,
         data: {
           session_token: data?.session_token,
           user_id: userId,
-          ...(needsTrips ? { trips: await listOpenTrips(adminClient, userId) } : {}),
+          ...(trips ? { trips } : {}),
         },
       };
+
     }
 
     case "START_TRIP": {
@@ -692,13 +702,63 @@ export const getNextScreen = async (decryptedBody: any) => {
         return errorResponse(flow_token, "Session expired. Please sign in again.");
       }
 
-      // TODO: generate actual report
+      const tripId = String(data?.trip_id ?? data?.trip_project ?? "");
+      if (!tripId) {
+        return errorResponse(flow_token, "Select a trip to report on.");
+      }
+
+      const rawType = String(data?.report_type ?? "pdf").toLowerCase();
+      const format: "csv" | "pdf" = rawType.includes("csv") ? "csv" : "pdf";
+
+      const rawDelivery = String(data?.delivery ?? "whatsapp").toLowerCase();
+      const wantsEmail = rawDelivery.includes("email");
+
+      let report;
+      try {
+        report = await generateTripReport(adminClient, userId, tripId, format);
+      } catch (err) {
+        console.error({ msg: "Report generation failed", user_id: userId, trip_id: tripId, error: String(err) });
+        return errorResponse(flow_token, "Could not generate that report. Please try again.");
+      }
+
+      const summary = `${report.receiptCount} receipts · Total ${report.currency} ${report.total.toFixed(2)}`;
+
+      if (wantsEmail) {
+        const toEmail =
+          String(data?.email ?? "").trim() ||
+          (
+            await adminClient.from("profiles").select("email").eq("id", userId).single()
+          ).data?.email ||
+          "";
+
+        const sent = await emailReport(toEmail, report);
+        if (sent) {
+          return successResponse(flow_token, {
+            status: "report_generated",
+            trip_id: tripId,
+            report_type: format,
+            report_url: report.url,
+            message: `${format.toUpperCase()} report for "${report.tripName}" emailed to ${toEmail}. ${summary}`,
+          });
+        }
+        return successResponse(flow_token, {
+          status: "report_generated",
+          trip_id: tripId,
+          report_type: format,
+          report_url: report.url,
+          message: `Email delivery isn't set up yet, so here's your ${format.toUpperCase()} report for "${report.tripName}": ${report.url} (link valid 7 days). ${summary}`,
+        });
+      }
+
       return successResponse(flow_token, {
         status: "report_generated",
-        trip_id: data?.trip_id ?? data?.trip_project,
-        report_type: data?.report_type,
+        trip_id: tripId,
+        report_type: format,
+        report_url: report.url,
+        message: `Your ${format.toUpperCase()} report for "${report.tripName}" is ready: ${report.url} (link valid 7 days). ${summary}`,
       });
     }
+
 
     case "SIGN_UP": {
       const password = String(data?.password ?? "");
