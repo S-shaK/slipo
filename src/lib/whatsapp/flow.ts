@@ -11,6 +11,15 @@
  *   VITE_* vars into client-side JS at build time, so a service-role key
  *   under that name would ship to every browser and bypass RLS entirely.
  *   This key must only ever exist as a server-only Secret.
+ * - NEW: "ping" health check now short-circuits BEFORE Supabase clients
+ *   are created. Previously createPublicClient()/createAdminClient() ran
+ *   unconditionally at the top of getNextScreen and threw synchronously
+ *   if SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY / SUPABASE_SERVICE_ROLE_KEY
+ *   were missing or not available to the server runtime — which meant
+ *   WhatsApp's health check ("action":"ping") failed with a 500 any time
+ *   those env vars weren't configured, even though ping doesn't need
+ *   Supabase at all. Health checks should succeed independent of
+ *   downstream service configuration.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -326,11 +335,12 @@ function validateOdometer(value: unknown, fieldName: string): number | null | "e
 export const getNextScreen = async (decryptedBody: any) => {
   const { screen, data, action, flow_token } = decryptedBody;
 
-  // Create clients once per request
-  const publicClient = createPublicClient();
-  const adminClient = createAdminClient();
-
-  // Health check
+  // Health check — MUST succeed even if Supabase env vars are missing,
+  // unset, or the database is unreachable. This is why it now runs
+  // before any Supabase client is constructed. WhatsApp pings this
+  // endpoint periodically to verify the Flow endpoint is alive; if this
+  // check depends on Supabase configuration, endpoint health flaps with
+  // Supabase configuration/availability, which is the wrong coupling.
   if (action === "ping") {
     return {
       data: {
@@ -338,6 +348,10 @@ export const getNextScreen = async (decryptedBody: any) => {
       },
     };
   }
+
+  // Create clients once per request (only needed for non-ping actions)
+  const publicClient = createPublicClient();
+  const adminClient = createAdminClient();
 
   // Client validation errors
   if (data?.error) {
