@@ -11,15 +11,6 @@
  *   VITE_* vars into client-side JS at build time, so a service-role key
  *   under that name would ship to every browser and bypass RLS entirely.
  *   This key must only ever exist as a server-only Secret.
- * - NEW: "ping" health check now short-circuits BEFORE Supabase clients
- *   are created. Previously createPublicClient()/createAdminClient() ran
- *   unconditionally at the top of getNextScreen and threw synchronously
- *   if SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY / SUPABASE_SERVICE_ROLE_KEY
- *   were missing or not available to the server runtime — which meant
- *   WhatsApp's health check ("action":"ping") failed with a 500 any time
- *   those env vars weren't configured, even though ping doesn't need
- *   Supabase at all. Health checks should succeed independent of
- *   downstream service configuration.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -30,8 +21,6 @@ import {
   RECEIPT_CATEGORIES,
   type FlowMediaItem,
 } from "./media";
-import { listAllTrips, generateTripReport, emailReport } from "./report";
-
 
 const APP_URL = process.env.APP_PUBLIC_URL || "https://slipo.lovable.app";
 
@@ -335,12 +324,11 @@ function validateOdometer(value: unknown, fieldName: string): number | null | "e
 export const getNextScreen = async (decryptedBody: any) => {
   const { screen, data, action, flow_token } = decryptedBody;
 
-  // Health check — MUST succeed even if Supabase env vars are missing,
-  // unset, or the database is unreachable. This is why it now runs
-  // before any Supabase client is constructed. WhatsApp pings this
-  // endpoint periodically to verify the Flow endpoint is alive; if this
-  // check depends on Supabase configuration, endpoint health flaps with
-  // Supabase configuration/availability, which is the wrong coupling.
+  // Create clients once per request
+  const publicClient = createPublicClient();
+  const adminClient = createAdminClient();
+
+  // Health check
   if (action === "ping") {
     return {
       data: {
@@ -348,10 +336,6 @@ export const getNextScreen = async (decryptedBody: any) => {
       },
     };
   }
-
-  // Create clients once per request (only needed for non-ping actions)
-  const publicClient = createPublicClient();
-  const adminClient = createAdminClient();
 
   // Client validation errors
   if (data?.error) {
@@ -469,24 +453,16 @@ export const getNextScreen = async (decryptedBody: any) => {
         };
       }
 
-      // The report screen can target live *and* completed trips; the other
-      // screens only make sense for open trips.
-      const trips =
-        nextScreen === "START_TRIP"
-          ? null
-          : nextScreen === "GENERATE_REPORT"
-            ? await listAllTrips(adminClient, userId)
-            : await listOpenTrips(adminClient, userId);
+      const needsTrips = nextScreen !== "START_TRIP";
 
       return {
         screen: nextScreen,
         data: {
           session_token: data?.session_token,
           user_id: userId,
-          ...(trips ? { trips } : {}),
+          ...(needsTrips ? { trips: await listOpenTrips(adminClient, userId) } : {}),
         },
       };
-
     }
 
     case "START_TRIP": {
@@ -716,63 +692,13 @@ export const getNextScreen = async (decryptedBody: any) => {
         return errorResponse(flow_token, "Session expired. Please sign in again.");
       }
 
-      const tripId = String(data?.trip_id ?? data?.trip_project ?? "");
-      if (!tripId) {
-        return errorResponse(flow_token, "Select a trip to report on.");
-      }
-
-      const rawType = String(data?.report_type ?? "pdf").toLowerCase();
-      const format: "csv" | "pdf" = rawType.includes("csv") ? "csv" : "pdf";
-
-      const rawDelivery = String(data?.delivery ?? "whatsapp").toLowerCase();
-      const wantsEmail = rawDelivery.includes("email");
-
-      let report;
-      try {
-        report = await generateTripReport(adminClient, userId, tripId, format);
-      } catch (err) {
-        console.error({ msg: "Report generation failed", user_id: userId, trip_id: tripId, error: String(err) });
-        return errorResponse(flow_token, "Could not generate that report. Please try again.");
-      }
-
-      const summary = `${report.receiptCount} receipts · Total ${report.currency} ${report.total.toFixed(2)}`;
-
-      if (wantsEmail) {
-        const toEmail =
-          String(data?.email ?? "").trim() ||
-          (
-            await adminClient.from("profiles").select("email").eq("id", userId).single()
-          ).data?.email ||
-          "";
-
-        const sent = await emailReport(toEmail, report);
-        if (sent) {
-          return successResponse(flow_token, {
-            status: "report_generated",
-            trip_id: tripId,
-            report_type: format,
-            report_url: report.url,
-            message: `${format.toUpperCase()} report for "${report.tripName}" emailed to ${toEmail}. ${summary}`,
-          });
-        }
-        return successResponse(flow_token, {
-          status: "report_generated",
-          trip_id: tripId,
-          report_type: format,
-          report_url: report.url,
-          message: `Email delivery isn't set up yet, so here's your ${format.toUpperCase()} report for "${report.tripName}": ${report.url} (link valid 7 days). ${summary}`,
-        });
-      }
-
+      // TODO: generate actual report
       return successResponse(flow_token, {
         status: "report_generated",
-        trip_id: tripId,
-        report_type: format,
-        report_url: report.url,
-        message: `Your ${format.toUpperCase()} report for "${report.tripName}" is ready: ${report.url} (link valid 7 days). ${summary}`,
+        trip_id: data?.trip_id ?? data?.trip_project,
+        report_type: data?.report_type,
       });
     }
-
 
     case "SIGN_UP": {
       const password = String(data?.password ?? "");

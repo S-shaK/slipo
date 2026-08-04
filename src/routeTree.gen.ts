@@ -16,7 +16,6 @@ import { Route as AuthenticatedManagerRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedTripsIndexRouteImport } from './routes/_authenticated/trips.index'
 import { Route as ApiPublicWhatsappFlowRouteImport } from './routes/api/public/whatsapp-flow'
-import { Route as ApiPublicTestSendFlowRouteImport } from './routes/api/public/test-send-flow'
 import { Route as AuthenticatedTripsNewRouteImport } from './routes/_authenticated/trips.new'
 import { Route as AuthenticatedTripsTripIdIndexRouteImport } from './routes/_authenticated/trips.$tripId.index'
 import { Route as AuthenticatedTripsTripIdReportRouteImport } from './routes/_authenticated/trips.$tripId.report'
@@ -55,11 +54,6 @@ const ApiPublicWhatsappFlowRoute = ApiPublicWhatsappFlowRouteImport.update({
   path: '/api/public/whatsapp-flow',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicTestSendFlowRoute = ApiPublicTestSendFlowRouteImport.update({
-  id: '/api/public/test-send-flow',
-  path: '/api/public/test-send-flow',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AuthenticatedTripsNewRoute = AuthenticatedTripsNewRouteImport.update({
   id: '/trips/new',
   path: '/trips/new',
@@ -84,7 +78,6 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/manager': typeof AuthenticatedManagerRoute
   '/trips/new': typeof AuthenticatedTripsNewRoute
-  '/api/public/test-send-flow': typeof ApiPublicTestSendFlowRoute
   '/api/public/whatsapp-flow': typeof ApiPublicWhatsappFlowRoute
   '/trips/': typeof AuthenticatedTripsIndexRoute
   '/trips/$tripId/report': typeof AuthenticatedTripsTripIdReportRoute
@@ -96,7 +89,6 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/manager': typeof AuthenticatedManagerRoute
   '/trips/new': typeof AuthenticatedTripsNewRoute
-  '/api/public/test-send-flow': typeof ApiPublicTestSendFlowRoute
   '/api/public/whatsapp-flow': typeof ApiPublicWhatsappFlowRoute
   '/trips': typeof AuthenticatedTripsIndexRoute
   '/trips/$tripId/report': typeof AuthenticatedTripsTripIdReportRoute
@@ -110,7 +102,6 @@ export interface FileRoutesById {
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/manager': typeof AuthenticatedManagerRoute
   '/_authenticated/trips/new': typeof AuthenticatedTripsNewRoute
-  '/api/public/test-send-flow': typeof ApiPublicTestSendFlowRoute
   '/api/public/whatsapp-flow': typeof ApiPublicWhatsappFlowRoute
   '/_authenticated/trips/': typeof AuthenticatedTripsIndexRoute
   '/_authenticated/trips/$tripId/report': typeof AuthenticatedTripsTripIdReportRoute
@@ -124,7 +115,6 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/manager'
     | '/trips/new'
-    | '/api/public/test-send-flow'
     | '/api/public/whatsapp-flow'
     | '/trips/'
     | '/trips/$tripId/report'
@@ -136,7 +126,6 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/manager'
     | '/trips/new'
-    | '/api/public/test-send-flow'
     | '/api/public/whatsapp-flow'
     | '/trips'
     | '/trips/$tripId/report'
@@ -149,7 +138,6 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard'
     | '/_authenticated/manager'
     | '/_authenticated/trips/new'
-    | '/api/public/test-send-flow'
     | '/api/public/whatsapp-flow'
     | '/_authenticated/trips/'
     | '/_authenticated/trips/$tripId/report'
@@ -160,7 +148,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
-  ApiPublicTestSendFlowRoute: typeof ApiPublicTestSendFlowRoute
   ApiPublicWhatsappFlowRoute: typeof ApiPublicWhatsappFlowRoute
 }
 
@@ -215,13 +202,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicWhatsappFlowRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/test-send-flow': {
-      id: '/api/public/test-send-flow'
-      path: '/api/public/test-send-flow'
-      fullPath: '/api/public/test-send-flow'
-      preLoaderRoute: typeof ApiPublicTestSendFlowRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_authenticated/trips/new': {
       id: '/_authenticated/trips/new'
       path: '/trips/new'
@@ -271,7 +251,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
-  ApiPublicTestSendFlowRoute: ApiPublicTestSendFlowRoute,
   ApiPublicWhatsappFlowRoute: ApiPublicWhatsappFlowRoute,
 }
 export const routeTree = rootRouteImport
