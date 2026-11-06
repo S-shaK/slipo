@@ -19,8 +19,8 @@ function Landing() {
       <header className="border-b border-border/60">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
           <div className="flex items-center gap-2">
-            <div className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground font-serif text-xl">L</div>
-            <span className="font-serif text-2xl">Ledger</span>
+            <div className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground font-serif text-xl">S</div>
+            <span className="font-serif text-2xl">Slipo</span>
           </div>
           <nav className="flex items-center gap-3">
             <Link to="/auth" className="text-sm text-muted-foreground hover:text-foreground">Sign in</Link>
