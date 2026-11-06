@@ -73,7 +73,7 @@ function Landing() {
       </section>
 
       <footer className="mx-auto max-w-6xl px-6 py-10 text-sm text-muted-foreground">
-        © {new Date().getFullYear()} Ledger. Built for people who travel for work.
+        © {new Date().getFullYear()} Slipo Built for people who travel for work.
       </footer>
     </div>
   );
